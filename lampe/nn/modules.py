@@ -6,6 +6,8 @@ import torch.nn.functional as F
 
 from torch import Tensor, BoolTensor
 
+from .flows import MAF
+
 
 class Affine(nn.Module):
     r"""Element-wise affine layer
@@ -358,3 +360,89 @@ class AMNRE(nn.Module):
         theta = torch.cat(torch.broadcast_tensors(theta, mask * 2. - 1.), dim=-1)
 
         return super().net(theta, x)
+
+
+class NPE(nn.Module):
+    r"""Neural Posterior Estimator (NPE)
+
+    (theta, x) ---> log p(theta | x)
+
+    Args:
+        theta_size: The size of the parameters.
+        x_size: The size of the (encoded) observations.
+        moments: The parameters moments (mu, sigma) for standardization.
+        embedding: An optional embedding for the observations.
+
+        **kwargs are passed to `MAF`.
+    """
+
+    def __init__(
+        self,
+        theta_size: int,
+        x_size: int,
+        moments: tuple[Tensor, Tensor] = None,
+        embedding: nn.Module = nn.Identity(),
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.flow = MAF(theta_size, x_size, moments=moments, **kwargs)
+
+        self.embedding = embedding
+
+    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
+        r""" log p(theta | x) """
+
+        return self.flow.condition(x).log_prob(theta)
+
+    def sample(self, x: Tensor, shape: torch.Size = ()) -> Tensor:
+        r""" theta ~ p(theta | x) """
+
+        return self.flow.condition(x).sample(shape)
+
+
+class MNPE(MNRE):
+    r"""Marginal Neural Posterior Estimator (MNPE)
+
+                ---> log p(theta_a | x)
+               /
+    (theta, x) ----> log p(theta_b | x)
+               \
+                ---> log p(theta_c | x)
+
+    Args:
+        masks: The masks of the considered parameter subspaces.
+        x_size: The size of the (encoded) observations.
+        moments: The parameters moments (mu, sigma) for standardization.
+        embedding: An optional embedding for the observations.
+
+        **kwargs are passed to `NPE`.
+    """
+
+    def __init__(
+        self,
+        masks: BoolTensor,
+        x_size: int,
+        moments: tuple[Tensor, Tensor] = None,
+        embedding: nn.Module = nn.Identity(),
+        **kwargs,
+    ):
+        super().__init__(masks, x_size, embedding=embedding)
+
+        if moments is not None:
+            mu, sigma = moments
+
+        self.etimators = nn.ModuleList([
+            NPE(
+                m.sum().item(),
+                x_size,
+                moments=None if moments is None else (mu[m], sigma[m]),
+                **kwargs,
+            )
+            for m in self.masks
+        ])
+
+    def __getitem__(self, mask: BoolTensor) -> NPE:
+        r"""Select estimator p(theta_a | x)"""
+
+        return super().__getitem__(mask)
