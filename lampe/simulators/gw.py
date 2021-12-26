@@ -5,6 +5,8 @@ import os
 import torch
 
 try:
+    os.environ['GWPY_RCPARAMS'] = '0'
+
     from gwpy.timeseries import TimeSeries
     from lal import MSUN_SI
     from lalsimulation import SimInspiralTransformPrecessingNewInitialConditions
@@ -13,7 +15,9 @@ try:
     from pycbc.psd import welch
     from pycbc.waveform import get_fd_waveform
 except Exception as e:
-    print('Error while importing mandatory module for gravitational wave analysis.')
+    print('Error while importing required modules for gravitational wave analysis.')
+    print('Requires')
+    print('  pip install gwpy pycbc')
     raise
 
 from numpy import ndarray as Array
@@ -31,9 +35,6 @@ from .priors import (
     Minimum,
 )
 from ..utils import cache, disk_cache, vectorize
-
-
-os.environ['GWPY_RCPARAMS'] = '0'
 
 
 class GW(Simulator):
@@ -190,6 +191,15 @@ class GW(Simulator):
 
         return x + torch.randn(*x.shape)
 
+    @property
+    def event(self) -> Tuple[Tensor, Tensor]:
+        r"""Event of reference"""
+
+        theta = None
+        x = self.process(self.event_dft)
+
+        return theta, x
+
 
 @cache
 def ligo_detector(name: str):
@@ -313,8 +323,7 @@ def gravitational_waveform(
     f_lower: float,  # Hz
     **kwargs,
 ) -> Array:
-    r"""Simulate a frequency-domain gravitational wave
-    projected onto LIGO detectors
+    r"""Simulate a frequency-domain gravitational wave projected onto LIGO detectors
 
     References:
         http://pycbc.org/pycbc/latest/html/waveform.html

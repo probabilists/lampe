@@ -1,5 +1,6 @@
 r"""Miscellaneous tools and general purpose helpers"""
 
+import os
 import warnings
 
 from functools import lru_cache, partial
