@@ -205,11 +205,11 @@ class OfflineSimulator(data.Dataset):
         super().__init__()
 
         self.fs = [h5py.File(f, 'r') for f in files]
-        self.chunks = [
-            (i, s)
+        self.chunks = list({
+            (i, s.start, s.stop)
             for i, f in enumerate(self.fs)
             for s, *_ in f['x'].iter_chunks()
-        ]
+        })
 
         self.batch_size = batch_size
         self.group_by = group_by
@@ -248,10 +248,8 @@ class OfflineSimulator(data.Dataset):
             slices = sorted(self.chunks[i:i + self.group_by])
 
             # Load
-            theta_chunk, x_chunk = map(np.concatenate, zip(*[
-                (self.fs[j]['theta'][s], self.fs[j]['x'][s])
-                for j, s in slices
-            ]))
+            theta_chunk = np.concatenate([self.fs[j]['theta'][k:l] for j, k, l in slices])
+            x_chunk = np.concatenate([self.fs[j]['x'][k:l] for j, k, l in slices])
 
             # Shuffle
             if self.shuffle:
