@@ -393,12 +393,12 @@ class NPE(nn.Module):
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r""" log p(theta | x) """
 
-        return self.flow.condition(x).log_prob(theta)
+        return self.flow.log_prob(theta, x)
 
     def sample(self, x: Tensor, shape: torch.Size = ()) -> Tensor:
         r""" theta ~ p(theta | x) """
 
-        return self.flow.condition(x).sample(shape)
+        return self.flow.sample(x, shape)
 
 
 class MNPE(MNRE):
