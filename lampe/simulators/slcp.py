@@ -15,13 +15,13 @@ class SLCP(Simulator):
     def __init__(self, limit: float = 3.):
         super().__init__()
 
-        self.register_buffer('low', torch.full((5,), -limit))
-        self.register_buffer('high', torch.full((5,), limit))
+        self.register_buffer('lower', torch.full((5,), -limit))
+        self.register_buffer('upper', torch.full((5,), limit))
 
     def marginal_prior(self, mask: BoolTensor) -> Distribution:
         r""" p(theta_a) """
 
-        return JointUniform(self.low[mask], self.high[mask])
+        return JointUniform(self.lower[mask], self.upper[mask])
 
     def likelihood(self, theta: Tensor, eps: float = 1e-8) -> Distribution:
         r""" p(x | theta) """

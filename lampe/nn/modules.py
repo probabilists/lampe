@@ -395,6 +395,7 @@ class NPE(nn.Module):
 
         return self.flow.log_prob(theta, x)
 
+    @torch.no_grad()
     def sample(self, x: Tensor, shape: torch.Size = ()) -> Tensor:
         r""" theta ~ p(theta | x) """
 

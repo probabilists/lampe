@@ -105,19 +105,19 @@ class GW(Simulator):
             [-np.pi / 2, np.pi / 2],  # declination [rad]
         ])
 
-        self.register_buffer('low', bounds[:, 0])
-        self.register_buffer('high', bounds[:, 1])
+        self.register_buffer('lower', bounds[:, 0])
+        self.register_buffer('upper', bounds[:, 1])
 
     def marginal_prior(self, mask: BoolTensor) -> Distribution:
         r""" p(theta_a) """
 
         if mask is ...:
-            mask = [True] * len(self.low)
+            mask = [True] * len(self.lower)
 
         marginals = []
 
         if mask[0] or mask[1]:
-            base = Uniform(self.low[0], self.high[0])
+            base = Uniform(self.lower[0], self.upper[0])
 
             if mask[0] and mask[1]:
                 law = Sort(base, n=2, descending=True)
@@ -133,11 +133,11 @@ class GW(Simulator):
                 continue
 
             if i in [7, 8, 11]:  # [tilt_1, tilt_2, theta_jn]
-                m = CosineUniform(self.low[i], self.high[i])
+                m = CosineUniform(self.lower[i], self.upper[i])
             elif i == 14:  # declination
-                m = SineUniform(self.low[i], self.high[i])
+                m = SineUniform(self.lower[i], self.upper[i])
             else:
-                m = Uniform(self.low[i], self.high[i])
+                m = Uniform(self.lower[i], self.upper[i])
 
             marginals.append(m)
 

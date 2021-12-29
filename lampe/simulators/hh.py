@@ -46,13 +46,13 @@ class HH(Simulator):
             [-100., -35.],  # mV
         ])
 
-        self.register_buffer('low', bounds[:, 0])
-        self.register_buffer('high', bounds[:, 1])
+        self.register_buffer('lower', bounds[:, 0])
+        self.register_buffer('upper', bounds[:, 1])
 
     def marginal_prior(self, mask: BoolTensor) -> Distribution:
         r""" p(theta_a) """
 
-        return JointUniform(self.low[mask], self.high[mask])
+        return JointUniform(self.lower[mask], self.upper[mask])
 
     def labels(self) -> list[str]:
         labels = [
