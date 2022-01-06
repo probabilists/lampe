@@ -85,7 +85,7 @@ def credible_levels(hist: Array, quantiles: Array) -> Array:
 
 def corner(
     data: Array,  # or matrix of 1d/2d histograms
-    bins: Union[int, list[int], list[Array]] = 100,
+    bins: Union[int, list[int]] = 100,
     bounds: tuple[Array, Array] = None,
     quantiles: ArrayLike = [.6827, .9545, .9973],
     color: Union[str, tuple] = None,
@@ -103,16 +103,15 @@ def corner(
     if data.dtype is np.dtype(object):
         D = len(data)
 
-        if type(bins) is int or type(bins[0]) is int:
-            if bounds is None:
-                lower, upper = np.zeros(D), np.ones(D)
-            else:
-                lower, upper = bounds
+        if bounds is None:
+            lower, upper = np.zeros(D), np.ones(D)
+        else:
+            lower, upper = bounds
 
-            bins = [None] * D
-            for i in range(D):
-                if data[i, i] is not None:
-                    bins[i] = np.linspace(lower[i], upper[i], len(data[i, i]) + 1)
+        bins = [None] * D
+        for i in range(D):
+            if data[i, i] is not None:
+                bins[i] = np.linspace(lower[i], upper[i], len(data[i, i]) + 1)
 
         hists = data
     else:
@@ -122,16 +121,15 @@ def corner(
         if type(bins) is int:
             bins = [bins] * D
 
-        if type(bins[0]) is int:
-            if bounds is None:
-                lower, upper = data.min(axis=0), data.max(axis=0)
-            else:
-                lower, upper = bounds
+        if bounds is None:
+            lower, upper = data.min(axis=0), data.max(axis=0)
+        else:
+            lower, upper = bounds
 
-            bins = [
-                np.histogram_bin_edges(data, bins[i], range=(lower[i], upper[i]))
-                for i in range(D)
-            ]
+        bins = [
+            np.histogram_bin_edges(data, bins[i], range=(lower[i], upper[i]))
+            for i in range(D)
+        ]
 
         hists = np.ndarray((D, D), dtype=object)
 

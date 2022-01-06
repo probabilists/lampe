@@ -67,10 +67,9 @@ class MCMC:
     @torch.no_grad()
     def grid(
         self,
-        bins: Union[int, list[int], Tensor],
+        bins: Union[int, list[int]],
         low: Tensor,
         high: Tensor,
-        density: bool = False,
     ) -> Tensor:
         r"""Evaluate f(x) for all x in grid"""
 
@@ -83,14 +82,12 @@ class MCMC:
             bins = [bins] * D
 
         # Create grid
-        volume = 1.  # volume of one cell
         domains = []
 
         for l, h, b in zip(low, high, bins):
             step = (h - l) / b
-            volume = volume * step
-
             dom = torch.linspace(l, h - step, b).to(step) + step / 2.
+
             domains.append(dom)
 
         grid = torch.stack(torch.meshgrid(*domains), dim=-1)
@@ -101,17 +98,16 @@ class MCMC:
 
         for x in grid.split(B):
             b = len(x)
+
             if b < B:
                 x = F.pad(x, (0, 0, 0, B - b))
+                y = self.f(x)[:b]
+            else:
+                y = self.f(x)
 
-            f.append(self.f(x)[:b])
+            f.append(y)
 
-        f = torch.cat(f).view(bins)
-
-        if density:
-            f = f * volume
-
-        return f
+        return torch.cat(f).view(bins)
 
 
 class MetropolisHastings(MCMC):
