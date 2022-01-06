@@ -1,6 +1,6 @@
 r"""Likelihood-free AMortized Posterior Estimation"""
 
-__version__ = '0.1.6'
+__version__ = '0.1.7'
 
 from .mcmc import PESampler, LRESampler
 from .nn import NRE, NPE

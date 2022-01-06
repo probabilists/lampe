@@ -90,7 +90,7 @@ class MCMC:
 
             domains.append(dom)
 
-        grid = torch.stack(torch.meshgrid(*domains), dim=-1)
+        grid = torch.stack(torch.meshgrid(*domains, indexing='ij'), dim=-1)
         grid = grid.view(-1, D).to(x)
 
         # Evaluate f(x) on grid

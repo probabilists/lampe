@@ -11,6 +11,7 @@ from tqdm import tqdm
 from torch import Tensor
 from typing import Iterable
 
+from .masks import MaskSampler
 from .nn import NLLLoss, BCEWithLogitsLoss
 from .optim import Optimizer, Scheduler, ExponentialLR
 
@@ -154,11 +155,39 @@ class NREPipe(nn.Module):
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         theta_prime = torch.roll(theta, 1, 0)
-
         y = self.model.embedding(x)
+
         ratio, ratio_prime = self.model(
             torch.stack((theta, theta_prime)),
             torch.stack((y, y)),
+        )
+
+        return self.criterion(ratio, ratio_prime)
+
+
+class MNREPipe(NREPipe):
+    pass
+
+
+class AMNREPipe(nn.Module):
+    r"""AMNRE training pipeline"""
+
+    def __init__(self, model: nn.Module, mask_sampler: MaskSampler, criterion: nn.Module = BCEWithLogitsLoss()):
+        super().__init__()
+
+        self.model = model
+        self.mask_sampler = mask_sampler
+        self.criterion = criterion
+
+    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
+        theta_prime = torch.roll(theta, 1, 0)
+        y = self.model.embedding(x)
+        mask = self.mask_sampler(theta.shape[:-1])
+
+        ratio, ratio_prime = self.model(
+            torch.stack((theta, theta_prime)),
+            torch.stack((y, y)),
+            torch.stack((mask, mask)),
         )
 
         return self.criterion(ratio, ratio_prime)
@@ -175,6 +204,30 @@ class NPEPipe(nn.Module):
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         y = self.model.embedding(x)
+
         log_prob = self.model(theta, y)
+
+        return self.criterion(log_prob)
+
+
+class MNPEPipe(NPEPipe):
+    pass
+
+
+class AMNPEPipe(nn.Module):
+    r"""AMNPE training pipeline"""
+
+    def __init__(self, model: nn.Module, mask_sampler: MaskSampler, criterion: nn.Module = NLLLoss()):
+        super().__init__()
+
+        self.model = model
+        self.mask_sampler = mask_sampler
+        self.criterion = criterion
+
+    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
+        y = self.model.embedding(x)
+        mask = self.mask_sampler(theta.shape[:-1])
+
+        log_prob = self.model(theta, y, mask)
 
         return self.criterion(log_prob)

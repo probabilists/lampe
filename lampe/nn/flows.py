@@ -73,7 +73,7 @@ class MAF(NormalizingFlow):
         kwargs.setdefault('num_blocks', 2)
         kwargs.setdefault('use_residual_blocks', False)
         kwargs.setdefault('use_batch_norm', False)
-        kwargs.setdefault('activation', F.relu)
+        kwargs.setdefault('activation', F.elu)
 
         if architecture == 'PRQ':
             kwargs['tails'] = 'linear'

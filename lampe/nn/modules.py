@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torch import Tensor, BoolTensor
+from torch.distributions import Distribution
 
 from .flows import MAF
 
@@ -297,7 +298,7 @@ class MNRE(nn.Module):
         return torch.stack(preds, dim=-1)
 
 
-class AMNRE(nn.Module):
+class AMNRE(NRE):
     r"""Arbitrary Marginal Neural Ratio Estimator (AMNRE)
 
     (theta, x, mask_a) ---> log r(theta_a, x)
@@ -319,12 +320,7 @@ class AMNRE(nn.Module):
         *args,
         **kwargs,
     ):
-        super().__init__()
-
-        self.net = NRE(theta_size * 2, *args, **kwargs)
-
-        self.standardize, self.net.standardize = self.net.standardize, nn.Identity()
-        self.embedding, self.net.embedding = self.net.embedding, nn.Identity()
+        super().__init__(theta_size * 2, *args, **kwargs)
 
         self.register_buffer('default', torch.ones(theta_size).bool())
 
@@ -339,7 +335,7 @@ class AMNRE(nn.Module):
         self,
         theta: Tensor,  # (N, D)
         x: Tensor,  # (N, *)
-        mask: BoolTensor = None,  # (*, D)
+        mask: BoolTensor = None,  # (D,) or (N, D)
     ) -> Tensor:
         if mask is None:
             mask = self.default
@@ -348,18 +344,11 @@ class AMNRE(nn.Module):
             blank = theta.new_zeros(theta.shape[:-1] + mask.shape)
             blank[..., mask] = theta
             theta = blank
-        elif mask.dim() > 1 and theta.shape != mask.shape:
-            batch_shape = theta.shape[:-1]
-            view_shape = batch_shape + (1,) * (mask.dim() - 1)
-            expand_shape = batch_shape + mask.shape[:-1]
-
-            theta = theta.view(view_shape + theta.shape[-1:]).expand(expand_shape + theta.shape[-1:])
-            x = x.view(view_shape + x.shape[-1:]).expand(expand_shape + x.shape[-1:])
 
         theta = self.standardize(theta) * mask
         theta = torch.cat(torch.broadcast_tensors(theta, mask * 2. - 1.), dim=-1)
 
-        return super().net(theta, x)
+        return self.net(torch.cat([theta, x], dim=-1)).squeeze(-1)
 
 
 class NPE(nn.Module):
@@ -447,3 +436,80 @@ class MNPE(MNRE):
         r"""Select estimator p(theta_a | x)"""
 
         return super().__getitem__(mask)
+
+
+class AMNPE(NPE):
+    r"""Arbitrary Marginal Neural Posterior Estimator (AMNPE)
+
+    (theta, x, mask_a) ---> log p(theta_a | x) / p(theta_a)
+
+    Args:
+        theta_size: The size of the parameters.
+        x_size: The size of the (encoded) observations.
+        prior: The prior distributions p(theta).
+
+        *args and **kwargs are passed to `NPE`.
+    """
+
+    def __init__(
+        self,
+        theta_size: int,
+        x_size: int,
+        prior: Distribution,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(theta_size, x_size + theta_size, *args, **kwargs)
+
+        self.prior = prior
+
+        self.register_buffer('default', torch.ones(theta_size).bool())
+
+    def __getitem__(self, mask: BoolTensor) -> nn.Module:
+        r"""Select estimator p(theta_a | x)"""
+
+        self.default = mask.to(self.default)
+
+        return self
+
+    @staticmethod
+    def collate(x: Tensor, mask: BoolTensor) -> Tensor:
+        shape = torch.broadcast_shapes(x.shape[:-1], mask.shape[:-1])
+        mask = mask.expand(shape + mask.shape[-1:])
+
+        return torch.cat([x, mask * 2. - 1.], dim=-1)
+
+    def forward(
+        self,
+        theta: Tensor,  # (N, D)
+        x: Tensor,  # (N, *)
+        mask: BoolTensor = None,  # (D,) or (N, D)
+    ) -> Tensor:
+        if mask is None:
+            mask = self.default
+
+        if mask.dim() == 1 and theta.size(-1) < mask.numel():
+            blank = theta.new_zeros(theta.shape[:-1] + mask.shape)
+            blank[..., mask] = theta
+            theta = blank
+
+        theta_prime = self.prior.sample(theta.shape[:-1])
+
+        theta = torch.where(mask, theta, theta_prime)
+        x = self.collate(x, mask)
+
+        return self.flow.log_prob(theta, x) - self.prior.log_prob(theta)
+
+    @torch.no_grad()
+    def sample(
+        self,
+        x: Tensor,
+        shape: torch.Size = (),
+        mask: BoolTensor = None
+    ) -> Tensor:
+        if mask is None:
+            mask = self.default
+
+        x = self.collate(x, mask)
+
+        return self.flow.sample(x, shape)
