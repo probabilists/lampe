@@ -1,25 +1,69 @@
-r"""Hodgkin-Huxley (HH) simulator"""
+r"""Hodgkin-Huxley (HH)
 
-import numba as nb
+HH [1] is a widespread non-linear mechanistic model of neural dynamics.
+
+References:
+    [1] A quantitative description of membrane current and its application to conduction and excitation in nerve
+    (Hodgkin et al., 1952)
+    https://link.springer.com/article/10.1007/BF02459568
+
+    [2] Training deep neural density estimators to identify mechanistic models of neural dynamics
+    (Gonçalves et al., 2020)
+    https://elifesciences.org/articles/56261
+
+Shapes:
+    theta: (8,)
+    x: (7,)
+"""
+
 import numpy as np
 import scipy.stats as sp
 import torch
 
 from numpy import ndarray as Array
 from torch import Tensor, BoolTensor
+from typing import *
 
 from . import Simulator
-from .priors import Distribution, JointUniform
-from ..utils import jit
+from ..priors import Distribution, JointUniform
+
+
+labels = [
+    f'${l}$' for l in [
+        r'g_{\mathrm{Na}}', r'g_{\mathrm{K}}', r'g_{\mathrm{M}}', 'g_l',
+        r'\tau_{\max}', 'V_t', r'\sigma', 'E_l',
+    ]
+]
+
+
+bounds = torch.tensor([
+    [0.5, 80.],     # g_Na [mS/cm^2]
+    [1e-4, 15.],    # g_K [mS/cm^2]
+    [1e-4, .6],     # g_M [mS/cm^2]
+    [1e-4, .6],     # g_l [mS/cm^2]
+    [50., 3000.],   # tau_max [ms]
+    [-90., -40.],   # V_t [mV]
+    [1e-4, .15],    # sigma [uA/cm^2]
+    [-100., -35.],  # E_l [mV]
+])
+
+lower, upper = bounds[:, 0], bounds[:, 1]
+
+
+def hh_prior(mask: BoolTensor = None) -> Distribution:
+    r""" p(theta) """
+
+    if mask is None:
+        mask = ...
+
+    return JointUniform(lower[mask], upper[mask])
 
 
 class HH(Simulator):
-    r"""Hodgkin-Huxley"""
+    r"""Hodgkin-Huxley (HH) simulator"""
 
     def __init__(self, summary: bool = True, **kwargs):
         super().__init__()
-
-        self.summary = summary
 
         # Constants
         default = {
@@ -30,57 +74,26 @@ class HH(Simulator):
             'current': 5e-4 / (np.pi * 7e-3 ** 2),  # uA / cm^2
         }
 
-        self.constants = nb.typed.Dict()
-        for k, v in default.items():
-            self.constants[k] = kwargs.get(k, v)
+        self.constants = {
+            k: kwargs.get(k, v)
+            for k, v in default.items()
+        }
 
-        # Prior
-        bounds = torch.tensor([
-            [0.5, 80.],     # mS/cm^2
-            [1e-4, 15.],    # mS/cm^2
-            [1e-4, .6],     # mS/cm^2
-            [1e-4, .6],     # mS/cm^2
-            [50., 3000.],   # ms
-            [-90., -40.],   # mV
-            [1e-4, .15],    # uA/cm^2
-            [-100., -35.],  # mV
-        ])
+        # Summarize statistics
+        self.summary = summary
 
-        self.register_buffer('lower', bounds[:, 0])
-        self.register_buffer('upper', bounds[:, 1])
-
-    def marginal_prior(self, mask: BoolTensor) -> Distribution:
-        r""" p(theta_a) """
-
-        return JointUniform(self.lower[mask], self.upper[mask])
-
-    def labels(self) -> list[str]:
-        labels = [
-            r'g_{\mathrm{Na}}', r'g_{\mathrm{K}}', r'g_{\mathrm{M}}', 'g_l',
-            r'\tau_{\max}', 'V_t', r'\sigma', 'E_l',
-        ]
-        labels = [f'${l}$' for l in labels]
-
-        return labels
-
-    def sample(self, theta: Tensor, shape: torch.Size = ()) -> Tensor:
+    def __call__(self, theta: Array) -> Array:
         r""" x ~ p(x | theta) """
 
-        _theta = theta.cpu().numpy().astype(np.float64)
-        _theta = np.broadcast_to(_theta, shape + _theta.shape)
-
-        x = voltage_trace(_theta, self.constants)
+        x = voltage_trace(theta, self.constants)
 
         if self.summary:
             x = summarize(x, self.constants)
 
-        x = torch.from_numpy(x).to(theta.device)
-
         return x
 
 
-@jit
-def voltage_trace(theta: Array, constants: dict) -> Array:
+def voltage_trace(theta: Array, constants: Dict[str, float]) -> Array:
     r"""Simulate Hodgkin-Huxley voltage trace
 
     References:
@@ -94,7 +107,7 @@ def voltage_trace(theta: Array, constants: dict) -> Array:
     V_0 = constants['initial_voltage']
     I = constants['current']
 
-    theta = theta.reshape((1,) + theta.shape)
+    theta = np.expand_dims(theta, axis=0)
     g_Na, g_K, g_M, g_leak, tau_max, V_t, sigma, E_leak = [
         theta[..., i] for i in range(8)
     ]
@@ -131,7 +144,7 @@ def voltage_trace(theta: Array, constants: dict) -> Array:
 
     # Iterations
     timesteps = np.arange(0, T, dt)
-    voltages = np.empty(V_t.shape + timesteps.shape)
+    voltages = []
 
     V = np.full_like(V_t, V_0)
     V_rel = V - V_t
@@ -166,14 +179,15 @@ def voltage_trace(theta: Array, constants: dict) -> Array:
         h = h_inf(V_rel) + (h - h_inf(V_rel)) * exp(-dt / tau_h(V_rel))
         p = p_inf(V) + (p - p_inf(V)) * exp(-dt / tau_p(V))
 
-        voltages[..., i] = V
+        voltages.append(V)
 
-    return voltages.reshape(voltages.shape[1:])
+    return np.stack(voltages, axis=-1).squeeze(axis=0)
 
 
-def summarize(x: Array, constants: dict) -> Array:
-    r"""Compute summary statistics"""
+def summarize(x: Array, constants: Dict[str, float]) -> Array:
+    r"""Compute voltage trace summary statistics"""
 
+    # Constants
     T = constants['duration']
     dt = constants['time_step']
     pad = constants['padding']

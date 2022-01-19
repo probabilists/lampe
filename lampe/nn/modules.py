@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from torch import Tensor, BoolTensor
 from torch.distributions import Distribution
+from typing import *
 
 from .flows import MAF
 
@@ -84,7 +85,7 @@ class MLP(nn.Sequential):
         self,
         input_size: int,
         output_size: int,
-        hidden_sizes: list[int] = [64, 64],
+        hidden_sizes: List[int] = [64, 64],
         bias: bool = True,
         activation: str = 'ReLU',
         dropout: float = 0.,
@@ -151,7 +152,7 @@ class ResNet(nn.Sequential):
         self,
         input_size: int,
         output_size: int,
-        residual_sizes: list[int] = [64, 64, 64],
+        residual_sizes: List[int] = [64, 64, 64],
         **kwargs,
     ):
         bias = kwargs.get('bias', True)
@@ -177,9 +178,8 @@ class NRE(nn.Module):
 
     Args:
         theta_size: The size of the parameters.
-        x_size: The size of the (encoded) observations.
+        x_size: The size of the observations.
         moments: The parameters moments (mu, sigma) for standardization.
-        embedding: An optional embedding for the observations.
         arch: The network architecture (`MLP` or `ResNet`).
 
         **kwargs are passed to `MLP` or `ResNet`.
@@ -194,8 +194,7 @@ class NRE(nn.Module):
         self,
         theta_size: int,
         x_size: int,
-        moments: tuple[Tensor, Tensor] = None,
-        embedding: nn.Module = nn.Identity(),
+        moments: Tuple[Tensor, Tensor] = None,
         arch: str = 'MLP',
         **kwargs,
     ):
@@ -212,10 +211,10 @@ class NRE(nn.Module):
             mu, sigma = moments
 
         self.standardize = nn.Identity() if moments is None else Affine(-mu / sigma, 1 / sigma)
-        self.embedding = embedding
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        return self.net(torch.cat([self.standardize(theta), x], dim=-1)).squeeze(-1)
+        theta = self.standardize(theta)
+        return self.net(torch.cat([theta, x], dim=-1)).squeeze(-1)
 
 
 class MNRE(nn.Module):
@@ -229,19 +228,19 @@ class MNRE(nn.Module):
 
     Args:
         masks: The masks of the considered parameter subspaces.
-        x_size: The size of the (encoded) observations.
+        x_size: The size of the observations.
         moments: The parameters moments (mu, sigma) for standardization.
-        embedding: An optional embedding for the observations.
 
         **kwargs are passed to `NRE`.
     """
+
+    BASE = NRE
 
     def __init__(
         self,
         masks: BoolTensor,
         x_size: int,
-        moments: tuple[Tensor, Tensor] = None,
-        embedding: nn.Module = nn.Identity(),
+        moments: Tuple[Tensor, Tensor] = None,
         **kwargs,
     ):
         super().__init__()
@@ -252,7 +251,7 @@ class MNRE(nn.Module):
             mu, sigma = moments
 
         self.estimators = nn.ModuleList([
-            NRE(
+            self.BASE(
                 m.sum().item(),
                 x_size,
                 moments=None if moments is None else (mu[m], sigma[m]),
@@ -260,9 +259,7 @@ class MNRE(nn.Module):
             ) for m in self.masks
         ])
 
-        self.embedding = embedding
-
-    def __getitem__(self, mask: BoolTensor) -> NRE:
+    def __getitem__(self, mask: BoolTensor) -> nn.Module:
         r"""Select estimator r(theta_a, x)"""
 
         mask = mask.to(self.masks)
@@ -287,8 +284,8 @@ class MNRE(nn.Module):
 
     def forward(
         self,
-        theta: Tensor,
-        x: Tensor,
+        theta: Tensor,  # (N, D)
+        x: Tensor,  # (N, L)
     ) -> Tensor:
         preds = []
 
@@ -334,16 +331,18 @@ class AMNRE(NRE):
     def forward(
         self,
         theta: Tensor,  # (N, D)
-        x: Tensor,  # (N, *)
+        x: Tensor,  # (N, L)
         mask: BoolTensor = None,  # (D,) or (N, D)
     ) -> Tensor:
         if mask is None:
             mask = self.default
 
-        if mask.dim() == 1 and theta.size(-1) < mask.numel():
-            blank = theta.new_zeros(theta.shape[:-1] + mask.shape)
-            blank[..., mask] = theta
-            theta = blank
+        zeros = theta.new_zeros(theta.shape[:-1] + mask.shape[-1:])
+
+        if mask.dim() == 1 and theta.shape[-1] < mask.numel():
+            theta = zeros.masked_scatter(mask, theta)
+        else:
+            theta = torch.where(mask, theta, zeros)
 
         theta = self.standardize(theta) * mask
         theta = torch.cat(torch.broadcast_tensors(theta, mask * 2. - 1.), dim=-1)
@@ -358,9 +357,8 @@ class NPE(nn.Module):
 
     Args:
         theta_size: The size of the parameters.
-        x_size: The size of the (encoded) observations.
+        x_size: The size of the observations.
         moments: The parameters moments (mu, sigma) for standardization.
-        embedding: An optional embedding for the observations.
 
         **kwargs are passed to `MAF`.
     """
@@ -369,22 +367,18 @@ class NPE(nn.Module):
         self,
         theta_size: int,
         x_size: int,
-        moments: tuple[Tensor, Tensor] = None,
-        embedding: nn.Module = nn.Identity(),
+        moments: Tuple[Tensor, Tensor] = None,
         **kwargs,
     ):
         super().__init__()
 
         self.flow = MAF(theta_size, x_size, moments=moments, **kwargs)
 
-        self.embedding = embedding
-
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r""" log p(theta | x) """
 
         return self.flow.log_prob(theta, x)
 
-    @torch.no_grad()
     def sample(self, x: Tensor, shape: torch.Size = ()) -> Tensor:
         r""" theta ~ p(theta | x) """
 
@@ -402,40 +396,13 @@ class MNPE(MNRE):
 
     Args:
         masks: The masks of the considered parameter subspaces.
-        x_size: The size of the (encoded) observations.
+        x_size: The size of the observations.
         moments: The parameters moments (mu, sigma) for standardization.
-        embedding: An optional embedding for the observations.
 
         **kwargs are passed to `NPE`.
     """
 
-    def __init__(
-        self,
-        masks: BoolTensor,
-        x_size: int,
-        moments: tuple[Tensor, Tensor] = None,
-        embedding: nn.Module = nn.Identity(),
-        **kwargs,
-    ):
-        super().__init__(masks, x_size, embedding=embedding)
-
-        if moments is not None:
-            mu, sigma = moments
-
-        self.etimators = nn.ModuleList([
-            NPE(
-                m.sum().item(),
-                x_size,
-                moments=None if moments is None else (mu[m], sigma[m]),
-                **kwargs,
-            )
-            for m in self.masks
-        ])
-
-    def __getitem__(self, mask: BoolTensor) -> NPE:
-        r"""Select estimator p(theta_a | x)"""
-
-        return super().__getitem__(mask)
+    BASE = NPE
 
 
 class AMNPE(NPE):
@@ -445,7 +412,7 @@ class AMNPE(NPE):
 
     Args:
         theta_size: The size of the parameters.
-        x_size: The size of the (encoded) observations.
+        x_size: The size of the observations.
         prior: The prior distributions p(theta).
 
         *args and **kwargs are passed to `NPE`.
@@ -482,34 +449,32 @@ class AMNPE(NPE):
     def forward(
         self,
         theta: Tensor,  # (N, D)
-        x: Tensor,  # (N, *)
+        x: Tensor,  # (N, L)
         mask: BoolTensor = None,  # (D,) or (N, D)
     ) -> Tensor:
         if mask is None:
             mask = self.default
 
-        if mask.dim() == 1 and theta.size(-1) < mask.numel():
-            blank = theta.new_zeros(theta.shape[:-1] + mask.shape)
-            blank[..., mask] = theta
-            theta = blank
-
         theta_prime = self.prior.sample(theta.shape[:-1])
 
-        theta = torch.where(mask, theta, theta_prime)
+        if mask.dim() == 1 and theta.shape[-1] < mask.numel():
+            theta = theta_prime.masked_scatter(mask, theta)
+        else:
+            theta = torch.where(mask, theta, theta_prime)
+
         x = self.collate(x, mask)
 
         return self.flow.log_prob(theta, x) - self.prior.log_prob(theta)
 
-    @torch.no_grad()
     def sample(
         self,
-        x: Tensor,
+        x: Tensor,  # (N, L)
         shape: torch.Size = (),
-        mask: BoolTensor = None
+        mask: BoolTensor = None,  # (D,)
     ) -> Tensor:
         if mask is None:
             mask = self.default
 
         x = self.collate(x, mask)
 
-        return self.flow.sample(x, shape)
+        return self.flow.sample(x, shape)[..., mask]

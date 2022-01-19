@@ -4,50 +4,53 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from abc import ABC, abstractmethod
 from itertools import islice
-from torch.distributions import (
-    Distribution,
-    Independent,
-    Normal,
-)
-
 from torch import Tensor
-from typing import Union
+from typing import *
+
+from .priors import Distribution, JointNormal
 
 
-class MCMC:
+class MCMC(ABC):
     r"""Abstract Markov chain Monte Carlo (MCMC) algorithm"""
 
-    def reference(self) -> Tensor:
-        r""" x_0 """
+    def __init__(
+        self,
+        x_0: Tensor,  # x_0
+        f: Callable = None,  # f(x)
+        log_f: Callable = None,  # log f(x)
+    ):
+        super().__init__()
 
-        raise NotImplementedError()
+        self.x_0 = x_0
 
-    def f(self, x: Tensor) -> Tensor:
-        r""" f(x) """
+        assert f is not None or log_f is not None, \
+            'either \'f\' or \'log_f\' must be provided'
 
-        return self.log_f(x).exp()
+        if f is None:
+            self.f = lambda x: log_f(x).exp()
+            self.log_f = log_f
+        else:
+            self.f = f
+            self.log_f = lambda x: f(x).log()
 
-    def log_f(self, x: Tensor) -> Tensor:
-        r""" log f(x) """
-
-        return NotImplementedError()
-
-    def __iter__(self):  # -> Tensor
+    @abstractmethod
+    def __iter__(self) -> Iterator[Tensor]:
         r""" x_i ~ p(x) ∝ f(x) """
+        pass
 
-        raise NotImplementedError()
-
+    @torch.no_grad()
     def __call__(
         self,
-        steps: int,
+        n: int,
         burn: int = 0,
-        skip: int = 1,
+        step: int = 1,
         groupby: int = 1,
-    ):  # -> Tensor
-        r""" (x_0, x_1, ..., x_n) ~ p(x) """
+    ) -> Iterator[Tensor]:
+        r""" (x_1, ..., x_n) ~ p(x) """
 
-        seq = islice(self, burn, steps, skip)
+        seq = islice(self, burn, burn + n * step, step)
 
         if groupby > 1:
             buff = []
@@ -57,7 +60,7 @@ class MCMC:
 
                 if len(buff) == groupby:
                     yield torch.cat(buff)
-                    buff = []
+                    buff.clear()
 
             if buff:
                 yield torch.cat(buff)
@@ -67,16 +70,16 @@ class MCMC:
     @torch.no_grad()
     def grid(
         self,
-        bins: Union[int, list[int]],
-        low: Tensor,
-        high: Tensor,
+        bins: Union[int, List[int]],
+        bounds: Tuple[Tensor, Tensor],
     ) -> Tensor:
         r"""Evaluate f(x) for all x in grid"""
 
-        x = self.reference()
+        x = self.x_0
 
         # Shape
-        B, D = x.shape
+        D = x.shape[-1]
+        B = x.numel() // D
 
         if type(bins) is int:
             bins = [bins] * D
@@ -84,10 +87,9 @@ class MCMC:
         # Create grid
         domains = []
 
-        for l, h, b in zip(low, high, bins):
-            step = (h - l) / b
-            dom = torch.linspace(l, h - step, b).to(step) + step / 2.
-
+        for l, u, b in zip(bounds[0], bounds[1], bins):
+            step = (u - l) / b
+            dom = torch.linspace(l, u - step, b).to(step) + step / 2.
             domains.append(dom)
 
         grid = torch.stack(torch.meshgrid(*domains, indexing='ij'), dim=-1)
@@ -111,28 +113,32 @@ class MCMC:
 
 
 class MetropolisHastings(MCMC):
-    r"""Abstract Metropolis-Hastings algorithm
+    r"""Metropolis-Hastings algorithm
 
     Wikipedia:
         https://en.wikipedia.org/wiki/Metropolis%E2%80%93Hastings_algorithm
     """
 
-    def __init__(self, sigma: Tensor = 1.):
-        super().__init__()
+    def __init__(self, *args, sigma: Tensor = 1., **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.sigma = sigma
-        self.q_symmetric = True
 
     def q(self, x: Tensor) -> Distribution:
         r"""Gaussian transition centered around x"""
 
-        return Independent(Normal(x, torch.ones_like(x) * self.sigma), 1)
+        return JointNormal(x, torch.ones_like(x) * self.sigma)
 
-    @torch.no_grad()
-    def __iter__(self):  # -> Tensor
+    @property
+    def symmetric(self) -> bool:
+        r"""Whether q(x | y) is equal to q(y | x)"""
+
+        return True
+
+    def __iter__(self) -> Iterator[Tensor]:
         r""" x_i ~ p(x) ∝ f(x) """
 
-        x = self.reference()
+        x = self.x_0
 
         # log f(x)
         log_f_x = self.log_f(x)
@@ -149,7 +155,7 @@ class MetropolisHastings(MCMC):
             #     f(x)   q(y | x)
             log_a = log_f_y - log_f_x
 
-            if not self.q_symmetric:
+            if not self.symmetric:
                 log_a = log_a + self.q(y).log_prob(x) - self.q(x).log_prob(y)
 
             a = log_a.exp()
@@ -167,49 +173,34 @@ class MetropolisHastings(MCMC):
             yield x
 
 
-class HamiltonianMonteCarlo(MCMC):
-    r"""Abstract Hamiltonian Monte Carlo algorithm
-
-    Wikipedia:
-        https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo
-    """
-    pass  # TODO
-
-
-class PESampler(MetropolisHastings):
-    r"""Posterior Estimator (PE) sampler"""
+class InferenceSampler(MetropolisHastings):
+    r"""Inference MCMC sampler"""
 
     def __init__(
         self,
-        estimator: nn.Module,
-        prior: Distribution,
-        x: Tensor,
+        x: Tensor,  # x
+        prior: Distribution,  # p(theta)
+        likelihood: Callable = None,  # log p(x | theta)
+        posterior: Callable = None,  # log p(theta | x)
+        ratio: Callable = None,  # log p(theta | x) - log p(theta)
         batch_size: int = 2 ** 10,  # 1024
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        theta_0 = prior.sample((batch_size,))
+        x = x.expand((batch_size,) + x.shape)
 
-        self.estimator = estimator
-        self.prior = prior
+        assert likelihood is not None or posterior is not None or ratio is not None, \
+            'either \'likelihood\', \'posterior\' or \'ratio\' must be provided'
 
-        self.batch_shape = (batch_size,)
-        self.x = x.expand(self.batch_shape + x.shape)
+        if likelihood is not None:
+            log_f = lambda theta: likelihood(theta, x) + prior.log_prob(theta)
+        elif posterior is not None:
+            log_f = lambda theta: posterior(theta, x)
+        elif ratio is not None:
+            log_f = lambda theta: ratio(theta, x) + prior.log_prob(theta)
 
-    def reference(self) -> Tensor:
-        r""" theta_0 """
-
-        return self.prior.sample(self.batch_shape)
-
-    def log_f(self, theta: Tensor) -> Tensor:
-        r""" log p(theta | x) """
-
-        return self.estimator(theta, self.x)
-
-
-class LRESampler(PESampler):
-    r"""Likelihood-to-evidence Ratio Estimator (LRE) sampler"""
-
-    def log_f(self, theta: Tensor) -> Tensor:
-        r""" log r(theta, x) + log p(theta) """
-
-        return self.estimator(theta, self.x) + self.prior.log_prob(theta)
+        super().__init__(
+            x_0=theta_0,
+            log_f=log_f,
+            **kwargs,
+        )

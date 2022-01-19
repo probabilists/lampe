@@ -1,11 +1,11 @@
-r"""Masking helpers"""
+r"""Mask samplers and helpers"""
 
 import numpy as np
 import torch
 import torch.nn as nn
 
 from torch import Tensor, BoolTensor, LongTensor
-from typing import Union
+from typing import *
 
 
 class MaskSampler(nn.Module):
@@ -28,10 +28,10 @@ class MaskSampler(nn.Module):
     def device(self) -> torch.device:
         return self.dummy.device
 
-    def forward(self, shape: tuple[int] = ()) -> BoolTensor:
+    def sample(self, shape: Tuple[int] = ()) -> BoolTensor:
         r""" a ~ p(a) """
 
-        mask = self._sample(shape)
+        mask = self.forward(shape)
 
         if self.filtr is not None:
             temp = mask.new_zeros(shape + self.filtr.shape)
@@ -40,16 +40,13 @@ class MaskSampler(nn.Module):
 
         return mask
 
-    def _sample(self, shape: tuple[int] = ()) -> BoolTensor:
-        raise NotImplementedError()
+
+def str2mask(string: str) -> BoolTensor:
+    return torch.tensor([char == '1' for char in string])
 
 
 def mask2str(mask: BoolTensor) -> str:
     return ''.join('1' if bit else '0' for bit in mask)
-
-
-def str2mask(string: str) -> BoolTensor:
-    return torch.tensor([char == '1' for char in string])
 
 
 class SelectionMask(MaskSampler):
@@ -60,7 +57,7 @@ class SelectionMask(MaskSampler):
 
         self.register_buffer('selection', selection)
 
-    def _sample(self, shape: tuple[int] = ()) -> BoolTensor:
+    def forward(self, shape: Tuple[int] = ()) -> BoolTensor:
         indices = torch.randint(len(self.selection), shape, device=self.device)
         return self.selection[indices]
 
@@ -73,7 +70,7 @@ class UniformMask(MaskSampler):
 
         self.size = size
 
-    def _sample(self, shape: tuple[int] = ()) -> BoolTensor:
+    def forward(self, shape: Tuple[int] = ()) -> BoolTensor:
         integers = torch.randint(1, 2 ** self.size, shape, device=self.device)
         return bit_repr(integers, self.size)
 
@@ -99,12 +96,12 @@ class PoissonMask(MaskSampler):
 
         self.rng = np.random.default_rng()
 
-    def _sample(self, shape: tuple[int] = ()) -> BoolTensor:
+    def forward(self, shape: Tuple[int] = ()) -> BoolTensor:
         k = self.rng.poisson(self.lmbda, shape)
-        k = torch.from_numpy(k)
+        k = torch.from_numpy(k).to(self.device)
 
-        mask = torch.arange(self.size) <= k[..., None]
-        mask = mask.to(self.device)
+        mask = torch.arange(self.size, device=self.device)
+        mask = mask <= k[..., None]
 
         order = torch.rand(mask.shape, device=self.device)
         order = torch.argsort(order, dim=-1)

@@ -1,233 +1,85 @@
 r"""Training routines"""
 
+import numpy as np
 import torch
 import torch.nn as nn
 
-from itertools import islice
-from time import time
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-
+from numpy import ndarray as Array
 from torch import Tensor
-from typing import Iterable
-
-from .masks import MaskSampler
-from .nn import NLLLoss, BCEWithLogitsLoss
-from .optim import Optimizer, Scheduler, ExponentialLR
+from torch.optim import Optimizer
+from tqdm import tqdm
+from typing import *
 
 
-class Trainer(object):
-    r"""Trainer"""
+def train_epoch(
+    pipe: Callable,  # embedding, estimator, criterion, ...
+    loader: Iterable,
+    optimizer: Optimizer,
+    grad_clip: float = None,
+) -> Array:
+    r"""Performs a training epoch"""
 
-    def __init__(
-        self,
-        pipe: nn.Module,  # embedding, model, criterion, etc.
-        train_loader: Iterable,
-        valid_loader: Iterable,
-        optimizer: Optimizer,
-        scheduler: Scheduler = None,
-        clip: float = None,  # gradient norm clip threshold
-        writer: SummaryWriter = None,
-        graph: bool = False,
-    ):
-        super().__init__()
+    losses = []
 
-        self.pipe = pipe
+    for inputs in loader:
+        l = pipe(*inputs)
 
-        self.train_loader = train_loader
-        self.valid_loader = valid_loader
+        losses.append(l.item())
 
-        if scheduler is None:
-            scheduler = ExponentialLR(optimizer, 1)
+        if not l.isfinite():
+            continue
 
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-        self.clip = clip
+        optimizer.zero_grad()
 
-        if writer is None:
-            writer = SummaryWriter()
-        self.writer = writer
+        l.backward()
 
-        if graph:
-            self.writer.add_graph(self.pipe, next(iter(self.train_loader)))
+        if grad_clip is not None:
+            norm = nn.utils.clip_grad_norm_(optimizer.parameters(), grad_clip)
 
-    @property
-    def lr(self) -> float:
-        return min(self.scheduler.lrs)
-
-    @property
-    def parameters(self) -> list[Tensor]:
-        return [p for group in self.optimizer.param_groups for p in group['params']]
-
-    @property
-    def epoch(self) -> int:
-        return self.scheduler.last_epoch
-
-    def optimize(self) -> Tensor:
-        r"""Optimization epoch"""
-
-        self.pipe.train()
-
-        losses = []
-
-        for inputs in self.train_loader:
-            l = self.pipe(*inputs)
-
-            if not l.isfinite():
+            if not norm.isfinite():
                 continue
 
-            losses.append(l.item())
+        optimizer.step()
 
-            self.optimizer.zero_grad()
-
-            l.backward()
-
-            if self.clip is not None:
-                norm = nn.utils.clip_grad_norm_(self.parameters, self.clip)
-                if not norm.isfinite():
-                    continue
-
-            self.optimizer.step()
-
-        return torch.tensor(losses)
-
-    @torch.no_grad()
-    def validate(self) -> Tensor:
-        r"""Validation epoch"""
-
-        self.pipe.eval()
-
-        losses = []
-
-        for inputs in self.valid_loader:
-            l = self.pipe(*inputs)
-
-            if not l.isfinite():
-                continue
-
-            losses.append(l.item())
-
-        return torch.tensor(losses)
-
-    def __call__(self, epochs: int):
-        r"""Training loop"""
-
-        with tqdm(total=epochs, unit='epoch') as tq:
-            tq.set_description('Epochs')
-
-            for _ in range(epochs):
-                self.writer.add_scalar('train/lr', self.lr, self.epoch)
-
-                start = time()
-
-                train_losses = self.optimize()
-                valid_losses = self.validate()
-
-                end = time()
-
-                self.writer.add_scalar('train/time', end - start, self.epoch)
-                self.writer.add_scalars('train/loss_mean', {
-                    'train': train_losses.mean(),
-                    'valid': valid_losses.mean(),
-                }, self.epoch)
-                self.writer.add_scalars('train/loss_median', {
-                    'train': train_losses.median(),
-                    'valid': valid_losses.median(),
-                }, self.epoch)
-
-                loss = valid_losses.mean().item()
-                self.scheduler.step(metric=loss)
-
-                tq.set_postfix(lr=self.lr, loss=loss)
-                tq.update(1)
-
-                yield self.epoch
+    return np.array(losses)
 
 
-class NREPipe(nn.Module):
-    r"""NRE training pipeline"""
+def train_loop(
+    pipe: Callable,
+    loader: Iterable,
+    optimizer: Optimizer,
+    epochs: Union[int, range],
+    **kwargs,
+) -> Iterator[Tuple[int, Array]]:
+    r"""Loops over training epochs"""
 
-    def __init__(self, model: nn.Module, criterion: nn.Module = BCEWithLogitsLoss()):
-        super().__init__()
+    if type(epochs) is int:
+        epochs = range(epochs)
 
-        self.model = model
-        self.criterion = criterion
+    with tqdm(epochs, unit='epoch') as tq:
+        for e in tq:
+            losses = train_epoch(
+                pipe,
+                loader,
+                optimizer,
+                **kwargs,
+            )
 
-    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        theta_prime = torch.roll(theta, 1, 0)
-        y = self.model.embedding(x)
+            tq.set_postfix(
+                lr=max(optimizer.lrs()),
+                loss=np.nanmean(losses),
+            )
 
-        ratio, ratio_prime = self.model(
-            torch.stack((theta, theta_prime)),
-            torch.stack((y, y)),
-        )
-
-        return self.criterion(ratio, ratio_prime)
-
-
-class MNREPipe(NREPipe):
-    pass
-
-
-class AMNREPipe(nn.Module):
-    r"""AMNRE training pipeline"""
-
-    def __init__(self, model: nn.Module, mask_sampler: MaskSampler, criterion: nn.Module = BCEWithLogitsLoss()):
-        super().__init__()
-
-        self.model = model
-        self.mask_sampler = mask_sampler
-        self.criterion = criterion
-
-    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        theta_prime = torch.roll(theta, 1, 0)
-        y = self.model.embedding(x)
-        mask = self.mask_sampler(theta.shape[:-1])
-
-        ratio, ratio_prime = self.model(
-            torch.stack((theta, theta_prime)),
-            torch.stack((y, y)),
-            torch.stack((mask, mask)),
-        )
-
-        return self.criterion(ratio, ratio_prime)
+            yield e, losses
 
 
-class NPEPipe(nn.Module):
-    r"""NPE training pipeline"""
+def lrs(self) -> Iterator[float]:
+    yield from (group['lr'] for group in self.param_groups)
 
-    def __init__(self, model: nn.Module, criterion: nn.Module = NLLLoss()):
-        super().__init__()
-
-        self.model = model
-        self.criterion = criterion
-
-    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        y = self.model.embedding(x)
-
-        log_prob = self.model(theta, y)
-
-        return self.criterion(log_prob)
+setattr(Optimizer, 'lrs', lrs)
 
 
-class MNPEPipe(NPEPipe):
-    pass
+def parameters(self) -> Iterator[Tensor]:
+    yield from (p for group in self.param_groups for p in group['params'])
 
-
-class AMNPEPipe(nn.Module):
-    r"""AMNPE training pipeline"""
-
-    def __init__(self, model: nn.Module, mask_sampler: MaskSampler, criterion: nn.Module = NLLLoss()):
-        super().__init__()
-
-        self.model = model
-        self.mask_sampler = mask_sampler
-        self.criterion = criterion
-
-    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        y = self.model.embedding(x)
-        mask = self.mask_sampler(theta.shape[:-1])
-
-        log_prob = self.model(theta, y, mask)
-
-        return self.criterion(log_prob)
+setattr(Optimizer, 'parameters', parameters)

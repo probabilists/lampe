@@ -1,4 +1,28 @@
-r"""Gravitational Waves (GW) simulator"""
+r"""Gravitational Waves (GW)
+
+GW computes the gravitational waves emitted by precessing quasi-circular
+binary black hole (BBH) systems, and project them onto LIGO detectors (H1 and L1).
+
+The simulator assumes stationary Gaussian noise with respect to the
+noise spectral density (NSD) estimated from 1024 seconds of detector data
+prior to GW150914 [1].
+
+Following [2], the waveforms are compressed to a reduced-order basis corresponding
+to the first 128 components of a singular value decomposition (SVD).
+
+References:
+    [1] Observation of Gravitational Waves from a Binary Black Hole Merger
+    (Abbott et al., 2016)
+    https://arxiv.org/abs/1602.03837
+
+    [2] Complete parameter inference for GW150914 using deep learning
+    (Green et al., 2021)
+    https://arxiv.org/abs/2008.03312
+
+Shapes:
+    theta: (15,)
+    x: (2, 256)
+"""
 
 import numpy as np
 import os
@@ -15,46 +39,104 @@ try:
     from pycbc.psd import welch
     from pycbc.waveform import get_fd_waveform
 except Exception as e:
-    print('Error while importing required modules for gravitational wave analysis.')
-    print('Requires')
+    print(f'ImportWarning: {e}. \'GW\' requires')
     print('  pip install gwpy pycbc')
-    raise
 
 from numpy import ndarray as Array
 from torch import Tensor, BoolTensor
+from tqdm import tqdm
+from typing import *
 
 from . import Simulator
-from .priors import (
+from ..priors import (
     Distribution,
     Joint,
     Uniform,
-    SineUniform,
     CosineUniform,
+    SineUniform,
     Sort,
     Maximum,
     Minimum,
 )
-from ..utils import cache, disk_cache, vectorize
+from ..utils import cache, vectorize
+
+
+labels = [
+    f'${l}$' for l in [
+        'm_1', 'm_2', r'\phi_c', 't_c', 'd_L',
+        'a_1', 'a_2', r'\theta_1', r'\theta_2', r'\phi_{12}', r'\phi_{JL}',
+        r'\theta_{JN}', r'\psi', r'\alpha', r'\delta',
+    ]
+]
+
+
+bounds = torch.tensor([
+    [10., 80.],               # primary mass [solar masses]
+    [10., 80.],               # secondary mass [solar masses]
+    [0., 2 * np.pi],          # coalesence phase [rad]
+    [-0.1, 0.1],              # coalescence time [s]
+    [100., 1000.],            # luminosity distance [megaparsec]
+    [0., 0.88],               # a_1 [/]
+    [0., 0.88],               # a_2 [/]
+    [0., np.pi],              # tilt_1 [rad]
+    [0., np.pi],              # tilt_2 [rad]
+    [0., 2 * np.pi],          # phi_12 [rad]
+    [0., 2 * np.pi],          # phi_jl [rad]
+    [0., np.pi],              # theta_jn [rad]
+    [0., np.pi],              # polarization [rad]
+    [0., 2 * np.pi],          # right ascension [rad]
+    [-np.pi / 2, np.pi / 2],  # declination [rad]
+])
+
+lower, upper = bounds[:, 0], bounds[:, 1]
+
+
+def gw_prior(mask: BoolTensor = None) -> Distribution:
+    r""" p(theta) """
+
+    if mask is None:
+        mask = [True] * 15
+
+    marginals = []
+
+    if mask[0] or mask[1]:
+        base = Uniform(lower[0], upper[0])
+
+        if mask[0] and mask[1]:
+            law = Sort(base, n=2, descending=True)
+        elif mask[0]:
+            law = Maximum(base, n=2)
+        elif mask[1]:
+            law = Minimum(base, n=2)
+
+        marginals.append(law)
+
+    for i, b in enumerate(mask[2:], start=2):
+        if not b:
+            continue
+
+        if i in [7, 8, 11]:  # [tilt_1, tilt_2, theta_jn]
+            m = CosineUniform(lower[i], upper[i])
+        elif i == 14:  # declination
+            m = SineUniform(lower[i], upper[i])
+        else:
+            m = Uniform(lower[i], upper[i])
+
+        marginals.append(m)
+
+    return Joint(marginals)
 
 
 class GW(Simulator):
-    r"""Gravitational Waves
-
-    References:
-        https://github.com/stephengreen/lfi-gw
-    """
+    r"""Gravitational Waves (GW) simulator"""
 
     def __init__(
         self,
-        n_components: int = 2 ** 7,  # 128
         reduced_basis: bool = True,
         noisy: bool = True,
         **kwargs,
     ):
         super().__init__()
-
-        self._shortcut = False
-        self.noisy = noisy
 
         # Constants
         default = {
@@ -74,131 +156,39 @@ class GW(Simulator):
             for k, v in default.items()
         }
 
-        self.event_dft = crop_dft(event_dft(**self.constants), **self.constants)
-        self.event_nsd = crop_dft(event_nsd(**self.constants), **self.constants)
+        self.event_nsd = event_nsd(**self.constants)
+        self.event_nsd = crop_dft(self.event_nsd, **self.constants)
 
         # Reduced SVD basis
         if reduced_basis:
-            self.basis = svd_basis(
-                n_components,
-                **self.constants,
-            ).astype(np.complex64)
+            self.basis = svd_basis(**self.constants)
         else:
             self.basis = None
 
-        # Prior
-        bounds = torch.tensor([
-            [10., 80.],               # primary mass [solar masses]
-            [10., 80.],               # secondary mass [solar masses]
-            [0., 2 * np.pi],          # coalesence phase [rad]
-            [-0.1, 0.1],              # coalescence time [s]
-            [100., 1000.],            # luminosity distance [megaparsec]
-            [0., 0.88],               # a_1 [/]
-            [0., 0.88],               # a_2 [/]
-            [0., np.pi],              # tilt_1 [rad]
-            [0., np.pi],              # tilt_2 [rad]
-            [0., 2 * np.pi],          # phi_12 [rad]
-            [0., 2 * np.pi],          # phi_jl [rad]
-            [0., np.pi],              # theta_jn [rad]
-            [0., np.pi],              # polarization [rad]
-            [0., 2 * np.pi],          # right ascension [rad]
-            [-np.pi / 2, np.pi / 2],  # declination [rad]
-        ])
+        # Noise
+        self.noisy = noisy
 
-        self.register_buffer('lower', bounds[:, 0])
-        self.register_buffer('upper', bounds[:, 1])
-
-    def marginal_prior(self, mask: BoolTensor) -> Distribution:
-        r""" p(theta_a) """
-
-        if mask is ...:
-            mask = [True] * len(self.lower)
-
-        marginals = []
-
-        if mask[0] or mask[1]:
-            base = Uniform(self.lower[0], self.upper[0])
-
-            if mask[0] and mask[1]:
-                law = Sort(base, n=2, descending=True)
-            elif mask[0]:
-                law = Maximum(base, n=2)
-            elif mask[1]:
-                law = Minimum(base, n=2)
-
-            marginals.append(law)
-
-        for i, b in enumerate(mask[2:], start=2):
-            if not b:
-                continue
-
-            if i in [7, 8, 11]:  # [tilt_1, tilt_2, theta_jn]
-                m = CosineUniform(self.lower[i], self.upper[i])
-            elif i == 14:  # declination
-                m = SineUniform(self.lower[i], self.upper[i])
-            else:
-                m = Uniform(self.lower[i], self.upper[i])
-
-            marginals.append(m)
-
-        return Joint(marginals)
-
-    def labels(self) -> list[str]:
-        labels = [
-            'm_1', 'm_2', r'\phi_c', 't_c', 'd_L',
-            'a_1', 'a_2', r'\theta_1', r'\theta_2', r'\phi_{12}', r'\phi_{JL}',
-            r'\theta_{JN}', r'\psi', r'\alpha', r'\delta',
-        ]
-        labels = [f'${l}$' for l in labels]
-
-        return labels
-
-    def sample(self, theta: Tensor, shape: torch.Size = ()) -> Tensor:
+    def __call__(self, theta: Array) -> Array:
         r""" x ~ p(x | theta) """
 
-        _theta = theta.cpu().numpy().astype(float)
-        x = gravitational_waveform(_theta, **self.constants)
-        x = crop_dft(x, **self.constants)
-        x = whiten_dft(x, self.event_nsd)
-
-        if self._shortcut:
-            return x
-
+        x = gravitational_waveform(theta, **self.constants)
         x = self.process(x)
-        x = x.to(theta.device)
-        x = torch.broadcast_to(x, shape + x.shape)
 
         if self.noisy:
-            x = self.noise(x)
+            x = x + np.random.randn(*x.shape)
 
         return x
 
-    def process(self, x: Array) -> Tensor:
-        r"""Process waveforms into network-ready inputs"""
+    def process(self, x: Array) -> Array:
+        r"""Processes waveforms into network-friendly inputs"""
 
-        x = x.astype(np.complex64)
+        x = crop_dft(x, **self.constants)
+        x = whiten_dft(x, self.event_nsd)
 
         if self.basis is not None:
             x = x @ self.basis
 
-        x = torch.from_numpy(x)
-        x = torch.view_as_real(x)
-
-        return x
-
-    def noise(self, x: Tensor) -> Tensor:
-        r"""Add unit Gaussian noise"""
-
-        return x + torch.randn(*x.shape)
-
-    @property
-    def event(self) -> Tuple[Tensor, Tensor]:
-        r"""Event of reference"""
-
-        theta = None
-        x = self.process(self.event_dft)
-
-        return theta, x
+        return x.view(np.float64)
 
 
 @cache
@@ -235,10 +225,10 @@ def tukey_window(
     return tukey(length, alpha)
 
 
-@disk_cache
+@cache(disk=True)
 def event_nsd(
     event: str,
-    detectors: tuple[str, ...],
+    detectors: Tuple[str, ...],
     duration: float,  # s
     segment: float,  # s
     **kwargs,
@@ -254,7 +244,6 @@ def event_nsd(
 
     time = event_gps(event) - duration
 
-    # Fetch
     nsds = []
 
     for det in detectors:
@@ -263,16 +252,17 @@ def event_nsd(
         win = tukey_window(duration, strain.sample_rate)
         win_factor = np.sum(win ** 2) / len(win)
         psd = welch(strain, len(win), len(win), window=win, avg_method='median') * win_factor
+        nsd = 0.5 * np.sqrt(psd.data / psd.delta_f)
 
-        nsds.append(0.5 * np.sqrt(psd.data / psd.delta_f))
+        nsds.append(nsd)
 
     return np.stack(nsds)
 
 
-@disk_cache
+@cache(disk=True)
 def event_dft(
     event: str,
-    detectors: tuple[str, ...],
+    detectors: Tuple[str, ...],
     duration: float,  # s
     buffer: float,  # s
     **kwargs,
@@ -281,7 +271,6 @@ def event_dft(
 
     time = event_gps(event) + buffer
 
-    # Fetch
     dfts = []
 
     for det in detectors:
@@ -296,14 +285,14 @@ def event_dft(
 
 
 @vectorize(otypes=[float] * 7)
-def lal_spins(*args) -> tuple[float, ...]:
+def lal_spins(*args) -> Tuple[float, ...]:
     r"""Convert LALInference geometric parameters to LALSimulation spins"""
 
     return tuple(SimInspiralTransformPrecessingNewInitialConditions(*args))
 
 
 @vectorize(otypes=[Array, Array])
-def plus_cross(**kwargs) -> tuple[Array, Array]:
+def plus_cross(**kwargs) -> Tuple[Array, Array]:
     r"""Simulate frequency-domain plus and cross polarizations
     of gravitational wave
     """
@@ -315,7 +304,7 @@ def plus_cross(**kwargs) -> tuple[Array, Array]:
 def gravitational_waveform(
     theta: Array,
     event: str,
-    detectors: tuple[str, ...],
+    detectors: Tuple[str, ...],
     approximant: str,
     duration: float,  # s
     sample_rate: float,  # Hz
@@ -404,31 +393,32 @@ def whiten_dft(dft: Array, nsd: Array) -> np.ndarray:
     return dft / nsd
 
 
-@store
+@cache(disk=True)
 def svd_basis(
-    n_components: int,
-    n_samples: int = 2 ** 15,
-    batch_size: int = 2 ** 10,
+    n_components: int = 2 ** 7,  # 128
+    n_samples: int = 2 ** 15,  # 32768
+    batch_size: int = 2 ** 10,  # 1024
     seed: int = 0,
     **kwargs,
 ) -> Array:
     r"""Build Singular Value Decompostition (SVD) basis"""
 
-    from tqdm import tqdm
-
-    sim = GW(reduced_basis=False, noisy=False, **kwargs)
-    sim.high[4] = sim.low[4]
-    sim._shortcut = True
+    prior = gw_prior()
+    simulator = GW(reduced_basis=False, noisy=False, **kwargs)
 
     print('Generating samples...')
 
     xs = []
 
     for _ in tqdm(range(n_samples // batch_size), unit_scale=batch_size):
-        _, x = sim.joint((batch_size,))
-        xs.append(x)
+        theta = prior.sample((batch_size,))
+        theta[..., 4] = lower[4]  # fixed luminosity distance
+        theta = theta.numpy().astype(np.float64)
 
-    x = np.stack(xs).reshape(-1, x.shape[-1])
+        xs.append(simulator(theta))
+
+    x = np.stack(xs).view(np.complex128)
+    x = x.reshape(-1, x.shape[-1])
 
     print('Computing SVD basis...')
 

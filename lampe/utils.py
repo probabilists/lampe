@@ -1,67 +1,66 @@
 r"""Miscellaneous tools and general purpose helpers"""
 
+import numpy as np
 import os
-import warnings
+import torch
 
-from functools import lru_cache, partial
-from numpy import vectorize as _vectorize
-
-from typing import Callable
+from functools import lru_cache, partial, wraps
+from typing import *
 
 
-def identity(f: Callable = None, *args, **kwargs) -> Callable:
-    r"""Identity decorator"""
+def decorator(decoration: Callable) -> Callable:
+    r"""Wraps a decoration inside a decorator"""
 
-    if f is None:
-        return lambda f: f
-    else:
-        return f
+    @wraps(decoration)
+    def decorate(f: Callable = None, /, **kwargs) -> Callable:
+        if f is None:
+            return decoration(**kwargs)
+        else:
+            return decoration(**kwargs)(f)
 
-
-def cache(f: Callable = None, **kwargs) -> Callable:
-    r"""Memory (RAM) cache decorator"""
-
-    kwargs.setdefault('maxsize', None)
-
-    if f is None:
-        return lru_cache(**kwargs)
-
-    return lru_cache(**kwargs)(f)
+    return decorate
 
 
-def disk_cache(*args, **kwargs) -> Callable:
-    r"""Disk cache decorator"""
+@decorator
+def cache(disk: bool = False, maxsize: int = None, **kwargs) -> Callable:
+    r"""Caching decorator"""
 
-    try:
-        from joblib import Memory
-    except ImportError as e:
-        warnings.warn(f'{e}. Disabling disk cache.', ImportWarning)
-        return cache(*args, **kwargs)
+    if disk:
+        try:
+            from joblib import Memory
+        except ImportError as e:
+            print(f'ImportWarning: {e}. Fallback to regular cache.')
+        else:
+            memory = Memory(os.path.expanduser('~/.cache'), mmap_mode='c', verbose=0)
+            return partial(memory.cache, **kwargs)
 
-    mem = Memory(os.path.expanduser('~/.cache'), mmap_mode='c', verbose=0)
-    return mem.cache(*args, **kwargs)
-
-
-def vectorize(f: Callable = None, **kwargs) -> Callable:
-    r"""Convenience vectorization decorator"""
-
-    if f is None:
-        return partial(_vectorize, **kwargs)
-
-    return _vectorize(f, **kwargs)
+    return lru_cache(maxsize=maxsize, **kwargs)
 
 
-def jit(*args, **kwargs) -> Callable:
-    r"""Just-in-Time (JIT) compilation decorator"""
+@decorator
+def vectorize(**kwargs) -> Callable:
+    r"""Vectorization decorator"""
 
-    try:
-        from numba import jit as njit
-    except ImportError as e:
-        warnings.warn(f'{e}. Disabling Just-in-Time compilation.', ImportWarning)
-        return identity(*args, **kwargs)
+    return partial(np.vectorize, **kwargs)
 
-    kwargs.setdefault('nopython', True)
-    kwargs.setdefault('cache', True)
 
-    return njit(*args, **kwargs)
+def deepapply(obj: Any, fn: Callable) -> Any:
+    r"""Applies `fn` to all tensors referenced in `obj`"""
 
+    if torch.is_tensor(obj):
+        obj = fn(obj)
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            obj[key] = deepapply(value, fn)
+    elif isinstance(obj, list):
+        for i, value in enumerate(obj):
+            obj[i] = deepapply(value, fn)
+    elif isinstance(obj, tuple):
+        obj = tuple(
+            deepapply(value, fn)
+            for value in obj
+        )
+    elif hasattr(obj, '__dict__'):
+        deepapply(obj.__dict__, fn)
+
+    return obj

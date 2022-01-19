@@ -7,7 +7,7 @@ import scipy.ndimage as si
 
 from numpy import ndarray as Array
 from numpy.typing import ArrayLike
-from typing import Union
+from typing import *
 
 
 plt.rcParams.update({
@@ -43,7 +43,7 @@ class LinearAlphaColormap(mpl.colors.LinearSegmentedColormap):
         self,
         color: Union[str, tuple],
         levels: ArrayLike = None,
-        alpha: tuple[float, float] = (0., 1.),
+        alpha: Tuple[float, float] = (0., 1.),
         name: str = None,
         **kwargs,
     ):
@@ -84,15 +84,15 @@ def credible_levels(hist: Array, quantiles: Array) -> Array:
 
 
 def corner(
-    data: Array,  # or matrix of 1d/2d histograms
-    bins: Union[int, list[int]] = 100,
-    bounds: tuple[Array, Array] = None,
+    data: ArrayLike,  # table or matrix of 1d/2d histograms
+    bins: Union[int, List[int]] = 100,
+    bounds: Tuple[ArrayLike, ArrayLike] = None,
     quantiles: ArrayLike = [.6827, .9545, .9973],
     color: Union[str, tuple] = None,
     alpha: float = .5,
     legend: str = None,
-    labels: list[str] = None,
-    markers: list[Array] = [],
+    labels: List[str] = None,
+    markers: List[ArrayLike] = [],
     smooth: float = 0,
     figure: mpl.figure.Figure = None,
     **kwargs,
@@ -100,21 +100,9 @@ def corner(
     r"""Corner plot"""
 
     # Histograms
-    if data.dtype is np.dtype(object):
-        D = len(data)
+    data = np.asarray(data)
 
-        if bounds is None:
-            lower, upper = np.zeros(D), np.ones(D)
-        else:
-            lower, upper = bounds
-
-        bins = [None] * D
-        for i in range(D):
-            if data[i, i] is not None:
-                bins[i] = np.linspace(lower[i], upper[i], len(data[i, i]) + 1)
-
-        hists = data
-    else:
+    if np.isscalar(data[0, 0]):
         D = data.shape[-1]
         data = data.reshape(-1, D)
 
@@ -124,7 +112,7 @@ def corner(
         if bounds is None:
             lower, upper = data.min(axis=0), data.max(axis=0)
         else:
-            lower, upper = bounds
+            lower, upper = map(np.asarray, bounds)
 
         bins = [
             np.histogram_bin_edges(data, bins[i], range=(lower[i], upper[i]))
@@ -149,6 +137,20 @@ def corner(
                     )
 
                 hists[i, j] = hist
+    else:
+        D = len(data)
+
+        if bounds is None:
+            lower, upper = np.zeros(D), np.ones(D)
+        else:
+            lower, upper = map(np.asarray, bounds)
+
+        bins = [None] * D
+        for i in range(D):
+            if data[i, i] is not None:
+                bins[i] = np.linspace(lower[i], upper[i], len(data[i, i]) + 1)
+
+        hists = data
 
     assert D > 1, 'Corner plots require at least 2 dimensions'
 
@@ -193,7 +195,7 @@ def corner(
     if not new:
         figure.legends.clear()
 
-    figure.legend(handles, texts, loc='upper right', bbox_to_anchor=(0.98, 0.98), frameon=False)
+    figure.legend(handles, texts, loc='upper right', bbox_to_anchor=(0.975, 0.975), frameon=False)
 
     # Plot
     for i in range(D):
@@ -241,7 +243,7 @@ def corner(
                     ax.set_ylim(bottom=bins[i][0], top=bins[i][-1])
 
             ## Markers
-            for marker in markers:
+            for marker in map(np.asarray, markers):
                 ax.axvline(
                     marker[j],
                     color='k',
@@ -292,5 +294,7 @@ def corner(
                     ax.set_ylabel(labels[i])
 
             ax.label_outer()
+
+    figure.align_labels()
 
     return figure

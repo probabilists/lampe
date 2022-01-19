@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torch import Tensor
+from torch import Tensor, BoolTensor
+from typing import *
 
 
 def reduce(x: Tensor, reduction: str) -> Tensor:
@@ -172,12 +173,12 @@ class QSWithLogitsLoss(nn.Module):
         https://en.wikipedia.org/wiki/Scoring_rule
     """
 
-    def forward(self, input: Tensor, weight: Tensor = None) -> Tensor:
+    def forward(self, logit: Tensor, weight: Tensor = None) -> Tensor:
         d = F.sigmoid(logit)  # d(x)
         return (1 - d) ** 2
 
 
-SCORING = {
+SCORES = {
     'NLL': NLLWithLogitsLoss,
     'FL': FocalWithLogitsLoss,
     'PL': PeripheralWithLogitsLoss,
@@ -204,26 +205,25 @@ class BCEWithLogitsLoss(nn.Module):
     ):
         super().__init__()
 
-        self.l1 = SCORING[positive]()
-        self.l0 = SCORING[negative]()
+        self.l1 = SCORES[positive]()
+        self.l0 = SCORES[negative]()
 
         self.reduction = reduction
 
     def forward(
         self,
-        pos_logit: Tensor,
-        neg_logit: Tensor,
-        pos_weight: Tensor = None,
-        neg_weight: Tensor = None,
+        logit: Tensor,
+        target: Tensor,
+        weight: Tensor = None,
     ) -> Tensor:
-        l1 = self.l1(pos_logit)  # -log d(x)
-        l0 = self.l0(-neg_logit)  # -log (1 - d(x))
+        pos = target > 0.5
 
-        if pos_weight is not None:
-            l1 = l1 * pos_weight
+        l1 = self.l1(logit[pos])  # -log d(x)
+        l0 = self.l0(-logit[~pos])  # -log (1 - d(x))
 
-        if neg_weight is not None:
-            l0 = l0 * neg_weight
+        if weight is not None:
+            l1 = l1 * weight[pos]
+            l0 = l0 * weight[~pos]
 
         cross = torch.cat((l1, l0))
 
@@ -233,7 +233,7 @@ class BCEWithLogitsLoss(nn.Module):
 class BalancingWithLogitsLoss(nn.Module):
     r"""Balancing loss
 
-    (0.5 - E_{p + q / 2} [d(x)]) ** 2
+    (E_p [d(x)] + E_q [d(x)] - 1) ** 2
     """
 
     def forward(
@@ -248,4 +248,4 @@ class BalancingWithLogitsLoss(nn.Module):
         else:
             d = (weight * d).sum() / weight.sum()
 
-        return (0.5 - d) ** 2
+        return (2 * d - 1) ** 2

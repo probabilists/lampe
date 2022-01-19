@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import setuptools
-import lampe
 
 with open('README.md', 'r') as f:
     readme = f.read()
@@ -11,20 +10,29 @@ with open('requirements.txt', 'r') as f:
 
 setuptools.setup(
     name='lampe',
-    version=lampe.__version__,
+    version='0.2.0',
+    packages=setuptools.find_packages(),
     description='Likelihood-free AMortized Posterior Estimation with PyTorch',
+    keywords='parameter inference bayes posterior amortized likelihood ratio mcmc torch',
     long_description=readme,
     long_description_content_type='text/markdown',
-    keywords='posterior parameter amortized inference torch pytorch',
     author='François Rozet',
     author_email='francois.rozet@outlook.com',
+    license='MIT license',
     url='https://github.com/francois-rozet/lampe',
-    install_requires=required,
-    packages=setuptools.find_packages(),
+    project_urls={
+        'Documentation': 'https://github.com/francois-rozet/lampe',
+        'Source': 'https://github.com/francois-rozet/lampe',
+        'Tracker': 'https://github.com/francois-rozet/lampe/issues',
+    },
     classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
+        'Intended Audience :: Developers',
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: MIT License',
+        'Natural Language :: English',
+        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3',
     ],
-    python_requires='>=3.9',
+    install_requires=required,
+    python_requires='>=3.8',
 )

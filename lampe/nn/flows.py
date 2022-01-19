@@ -1,16 +1,14 @@
 r"""Flows and parametric distributions"""
 
-
 import nflows.distributions as D
 import nflows.transforms as T
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from functools import cached_property
-
 from nflows.flows import Flow
 from torch import Tensor
+from typing import *
 
 
 class NormalizingFlow(Flow):
@@ -23,7 +21,7 @@ class NormalizingFlow(Flow):
         transforms: A list of (learnable) conditional transforms.
     """
 
-    def __init__(self, base: D.Distribution, transforms: list[T.Transform]):
+    def __init__(self, base: D.Distribution, transforms: List[T.Transform]):
         super().__init__(
             T.CompositeTransform(transforms),
             base
@@ -34,7 +32,11 @@ class NormalizingFlow(Flow):
 
         return super().log_prob(x, y)
 
+    @torch.no_grad()
     def sample(self, y: Tensor, shape: torch.Size = ()) -> Tensor:
+        return self.rsample(y, shape)
+
+    def rsample(self, y: Tensor, shape: torch.Size = ()) -> Tensor:
         r""" x ~ p(x | y) """
 
         size = torch.Size(shape).numel()
@@ -51,6 +53,7 @@ class MAF(NormalizingFlow):
     Args:
         x_size: The input size.
         y_size: The context size.
+        arch: The flow architecture.
         num_transforms: The number of transforms.
         moments: The input moments (mu, sigma) for standardization.
 
@@ -64,9 +67,9 @@ class MAF(NormalizingFlow):
         self,
         x_size: int,
         y_size: int,
-        architecture: str = 'affine',  # ['PRQ', 'UMNN']
+        arch: str = 'affine',  # ['PRQ', 'UMNN']
         num_transforms: int = 5,
-        moments: tuple[Tensor, Tensor] = None,
+        moments: Tuple[Tensor, Tensor] = None,
         **kwargs,
     ):
         kwargs.setdefault('hidden_features', 64)
@@ -75,26 +78,26 @@ class MAF(NormalizingFlow):
         kwargs.setdefault('use_batch_norm', False)
         kwargs.setdefault('activation', F.elu)
 
-        if architecture == 'PRQ':
+        if arch == 'PRQ':
             kwargs['tails'] = 'linear'
             kwargs.setdefault('num_bins', 8)
             kwargs.setdefault('tail_bound', 1.)
 
             tf = T.MaskedPiecewiseRationalQuadraticAutoregressiveTransform
-        elif architecture == 'UMNN':
+        elif arch == 'UMNN':
             kwargs.setdefault('integrand_net_layers', [64, 64, 64])
             kwargs.setdefault('cond_size', 32)
             kwargs.setdefault('nb_steps', 32)
 
             tf = T.MaskedUMNNAutoregressiveTransform
-        else:  # architecture == 'affine'
+        else:  # arch == 'affine'
             tf = T.MaskedAffineAutoregressiveTransform
 
         transforms = []
 
         if moments is not None:
-            shift, scale = moments
-            transforms.append(T.PointwiseAffineTransform(-shift / scale, 1 / scale))
+            mu, sigma = moments
+            transforms.append(T.PointwiseAffineTransform(-mu / sigma, 1 / sigma))
 
         for _ in range(num_transforms):
             transforms.extend([
