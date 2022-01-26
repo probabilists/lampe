@@ -4,9 +4,11 @@ import math
 import torch
 import torch.nn as nn
 
+from textwrap import indent
 from torch import Tensor
 from torch.distributions import *
 from torch.distributions.constraints import interval
+from torch.distributions.utils import broadcast_all
 from typing import *
 
 from .utils import deepapply
@@ -28,12 +30,11 @@ def init(self, *args, **kwargs):
 Distribution.__init__ = init
 Distribution._apply = deepapply
 Distribution._validate_args = False
+Distribution.arg_constraints = {}
 
 
 class Joint(Distribution):
     r"""Joint distribution of independent random variables"""
-
-    arg_constraints: dict = {}
 
     def __init__(self, marginals: List[Distribution]):
         super().__init__()
@@ -73,25 +74,37 @@ class Joint(Distribution):
 
         return lp
 
+    def __repr__(self) -> str:
+        lines = [
+            indent(repr(dist), ' ' * 2)
+            for dist in self.marginals
+        ]
 
-class JointNormal(Distribution):
+        return f'{self.__class__.__name__}(\n' + ',\n'.join(lines) + '\n)'
+
+
+class JointNormal(Independent):
     r"""Joint distribution of independent normal random variables"""
 
-    def __new__(cls, loc: Tensor, scale: Tensor, ndims: int = 1):
-        return Independent(Normal(loc, scale), ndims)
+    def __init__(self, loc: Tensor, scale: Tensor, ndims: int = 1):
+        super().__init__(Normal(loc, scale), ndims)
+
+    def __repr__(self) -> str:
+        return f'Joint{self.base_dist}'
 
 
-class JointUniform(Distribution):
+class JointUniform(Independent):
     r"""Joint distribution of independent uniform random variables"""
 
-    def __new__(cls, low: Tensor, high: Tensor, ndims: int = 1):
-        return Independent(Uniform(low, high), ndims)
+    def __init__(self, low: Tensor, high: Tensor, ndims: int = 1):
+        super().__init__(Uniform(low, high), ndims)
+
+    def __repr__(self) -> str:
+        return f'Joint{self.base_dist}'
 
 
 class Sort(Distribution):
     r"""Sort of independent scalar random variables"""
-
-    arg_constraints: dict = {}
 
     def __init__(
         self,
@@ -107,6 +120,9 @@ class Sort(Distribution):
         self.n = n
         self.descending = descending
         self.log_fact = math.log(math.factorial(n))
+
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}({self.base}, {self.n})'
 
     @property
     def event_shape(self) -> torch.Size:
@@ -158,6 +174,9 @@ class TopK(Sort):
         self.k = k
         self.log_fact = self.log_fact - math.log(math.factorial(n - k))
 
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}({self.base}, {self.k}, {self.n})'
+
     @property
     def event_shape(self) -> torch.Size:
         return torch.Size([self.k])
@@ -185,6 +204,9 @@ class Maximum(TopK):
 
         self.descending = True
 
+    def __repr__(self) -> str:
+        return Sort.__repr__(self)
+
     @property
     def event_shape(self) -> torch.Size:
         return torch.Size()
@@ -208,8 +230,11 @@ class Minimum(Maximum):
 class TransformedUniform(TransformedDistribution):
     r"""T-uniform distribution"""
 
+    arg_constraints = Uniform.arg_constraints
+
     def __init__(self, low: Tensor, high: Tensor, t: Transform):
-        super().__init__(Uniform(t(low), t(high)), [t.inv])
+        self.low, self.high = broadcast_all(low, high)
+        super().__init__(Uniform(t(self.low), t(self.high)), [t.inv])
 
 
 class PowerUniform(TransformedUniform):
