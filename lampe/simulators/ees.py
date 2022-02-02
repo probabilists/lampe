@@ -202,42 +202,29 @@ def fixed_length_amr(p_clouds: Array, pressures: Array, scaling: int = 10, width
     cloud_indices = np.searchsorted(pressures, np.asarray(p_clouds))
 
     # High resolution intervals
-    intervals = []
+    def bounds(center: int, width: int) -> Tuple[int, int]:
+        upper = min(center + width // 2, length)
+        lower = max(upper - width, 0)
+        return lower, lower + width
 
-    for idx in cloud_indices:
-        lower = max(idx - (scaling * width) // 2, 0)
-        upper = min(lower + scaling * width, length)
-        lower = min(upper - scaling * width, lower)
-
-        intervals.append((lower, upper))
+    intervals = [bounds(idx, scaling * width) for idx in cloud_indices]
 
     # Merge intervals
-    merged = False
-    while not merged:
-        intervals = sorted(intervals)
-        stack = []
+    while True:
+        intervals, stack = sorted(intervals), []
 
         for interval in intervals:
             if stack and stack[-1][1] >= interval[0]:
                 last = stack.pop()
-                total_width = last[1] - last[0] + interval[1] - interval[0]
-                lower, upper = last[0], max(last[1], interval[1])
+                interval = bounds(
+                    (last[0] + max(last[1], interval[1]) + 1) // 2,
+                    last[1] - last[0] + interval[1] - interval[0],
+                )
 
-                ## Keep constant width
-                left = False
-                while upper - lower < total_width:
-                    left = not left
-                    if left and lower > 0:
-                        lower = lower - 1
-                    elif not left and upper < length:
-                        upper = upper + 1
-
-                stack.append((lower, upper))
-            else:
-                stack.append(interval)
+            stack.append(interval)
 
         if len(intervals) == len(stack):
-            merged = True
+            break
         intervals = stack
 
     # Intervals to indices
