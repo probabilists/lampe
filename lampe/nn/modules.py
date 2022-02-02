@@ -11,6 +11,16 @@ from typing import *
 from .flows import MAF
 
 
+ACTIVATIONS = {
+    'ReLU': nn.ReLU,
+    'PReLU': nn.PReLU,
+    'ELU': nn.ELU,
+    'CELU': nn.CELU,
+    'SELU': nn.SELU,
+    'GELU': nn.GELU,
+}
+
+
 class Affine(nn.Module):
     r"""Element-wise affine layer
 
@@ -35,81 +45,64 @@ class Affine(nn.Module):
         ])
 
 
-class BatchNorm(nn.BatchNorm1d):
-    r"""Batch Normalization (BatchNorm) layer
-    normalizing only the last dimension.
+class BatchNorm0d(nn.BatchNorm1d):
+    r"""Batch Normalization (BatchNorm) layer for scalars
+
+    References:
+        [1] Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift
+        (Ioffe et al., 2015)
+        https://arxiv.org/abs/1502.03167
     """
 
     def forward(self, x: Tensor) -> Tensor:
-        shape = x.shape[:-1]
+        shape = x.shape
 
-        x = x.view(-1, x.size(-1))
+        x = x.view(-1, shape[-1])
         x = super().forward(x)
-        x = x.view(shape + x.shape[-1:])
+        x = x.view(shape)
 
         return x
-
-
-ACTIVATIONS = {
-    'ReLU': nn.ReLU,
-    'PReLU': nn.PReLU,
-    'ELU': nn.ELU,
-    'CELU': nn.CELU,
-    'SELU': nn.SELU,
-    'GELU': nn.GELU,
-}
-
-
-NORMALIZATIONS = {
-    'batch': BatchNorm,
-    'group': nn.GroupNorm,
-    'layer': nn.LayerNorm,
-}
 
 
 class MLP(nn.Sequential):
     r"""Multi-Layer Perceptron (MLP)
 
     Args:
-        input_size: The input size.
-        output_size: The output size.
-        hidden_sizes: The (list of) intermediate sizes.
-        bias: Whether to use bias or not.
+        in_features: The number of input features.
+        out_features: The number of output features.
+        hidden_features: The numbers of hidden features.
         activation: The activation layer type.
+        batchnorm: Whether to use batch normalization or not.
         dropout: The dropout rate.
-        normalization: The normalization layer type.
-        activation_first: Whether the first layer is an activation or not.
+
+        **kwargs are passed to `nn.Linear`.
     """
 
     def __init__(
         self,
-        input_size: int,
-        output_size: int,
-        hidden_sizes: List[int] = [64, 64],
-        bias: bool = True,
+        in_features: int,
+        out_features: int,
+        hidden_features: List[int] = [64, 64],
         activation: str = 'ReLU',
+        batchnorm: bool = False,
         dropout: float = 0.,
-        normalization: str = None,
-        activation_first: bool = False,
-        **absorb,
+        **kwargs,
     ):
         activation = ACTIVATIONS[activation]
+        batchnorm = BatchNorm0d if batchnorm else lambda _: None
+        dropout = nn.Dropout(dropout) if dropout > 0 else None
 
-        if dropout == 0.:
-            dropout = lambda: None
-        else:
-            dropout = lambda: nn.Dropout(dropout)
+        layers = []
 
-        normalization = NORMALIZATIONS.get(normalization, lambda x: None)
-
-        layers = [normalization(input_size), activation()] if activation_first else []
-
-        for current_size, next_size in zip([input_size] + hidden_sizes, hidden_sizes + [output_size]):
+        for before, after  in zip(
+            [in_features] + hidden_features,
+            hidden_features + [out_features],
+        ):
             layers.extend([
-                nn.Linear(current_size, next_size, bias),
-                normalization(next_size),
+                nn.Linear(before, after, **kwargs),
+                batchnorm(after),
                 activation(),
-                dropout(),
+                dropout,
             ])
 
         layers = layers[:-3]
@@ -117,21 +110,22 @@ class MLP(nn.Sequential):
 
         super().__init__(*layers)
 
-        self.input_size = input_size
-        self.output_size = output_size
+        self.in_features = in_features
+        self.out_features = out_features
 
 
 class ResBlock(MLP):
     r"""Residual Block (ResBlock)
 
     Args:
-        size: The input, output and hidden sizes.
+        features: The input, output and hidden features.
+        block_layers: The number of block layers.
 
         **kwargs are passed to `MLP`.
     """
 
-    def __init__(self, size: int, **kwargs):
-        super().__init__(size, size, [size], activation_first=True, **kwargs)
+    def __init__(self, features: int, block_layers: int = 2, **kwargs):
+        super().__init__(features, features, [features] * block_layers, **kwargs)
 
     def forward(self, input: Tensor) -> Tensor:
         return input + super().forward(input)
@@ -141,34 +135,35 @@ class ResNet(nn.Sequential):
     r"""Residual Network (ResNet)
 
     Args:
-        input_size: The input size.
-        output_size: The output size.
-        residual_sizes: The (list of) intermediate sizes.
+        in_features: The number of input features.
+        out_features: The number of output features.
+        hidden_features: The numbers of hidden features.
 
         **kwargs are passed to `ResBlock`.
     """
 
     def __init__(
         self,
-        input_size: int,
-        output_size: int,
-        residual_sizes: List[int] = [64, 64, 64],
+        in_features: int,
+        out_features: int,
+        hidden_features: List[int] = [64, 64],
         **kwargs,
     ):
-        bias = kwargs.get('bias', True)
+        blocks = [nn.Linear(in_features, in_features)]
 
-        for current_size, next_size in zip([input_size] + hidden_sizes, hidden_sizes + [output_size]):
-            if current_size != next_size:
-                blocks.append(nn.Linear(current_size, next_size, bias))
+        for before, after in zip(
+            [in_features] + hidden_features,
+            hidden_features + [out_features],
+        ):
+            blocks.append(ResBlock(before, **kwargs))
 
-            blocks.append(ResBlock(next_size, **kwargs))
-
-        blocks = blocks[:-1]
+            if before != after:
+                blocks.append(nn.Linear(before, after))
 
         super().__init__(*blocks)
 
-        self.input_size = input_size
-        self.output_size = output_size
+        self.in_features = in_features
+        self.out_features = out_features
 
 
 class NRE(nn.Module):
