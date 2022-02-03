@@ -3,17 +3,28 @@ r"""Pipelines"""
 import torch
 import torch.nn as nn
 
-from torch import Tensor
+from torch import Tensor, BoolTensor
+from torch.distributions import Distribution
 from typing import *
-
-from .masks import MaskSampler
 
 
 class Pipe(nn.Module):
     r"""Abstract pipeline class"""
 
-    def __init__(self, device: torch.device = None):
+    def __init__(
+        self,
+        embedding: nn.Module = nn.Identity(),
+        filtr: BoolTensor = None,
+        device: torch.device = None,
+    ):
         super().__init__()
+
+        self.embedding = embedding
+
+        if filtr is None:
+            self.filtr = None
+        else:
+            self.register_buffer('filtr', filtr)
 
         self.register_buffer('dummy', torch.tensor(0., device=device))
 
@@ -21,8 +32,15 @@ class Pipe(nn.Module):
     def device(self) -> torch.device:
         return self.dummy.device
 
-    def move(self, *args) -> Tuple[Tensor]:
-        return tuple(map(lambda x: x.to(self.device), args))
+    def move(self, theta: Tensor, x: Tensor) -> Tensor:
+        theta, x = theta.to(self.device), x.to(self.device)
+
+        if self.filtr is not None:
+            theta = theta[..., self.filtr]
+
+        x = self.embedding(x)
+
+        return theta, x
 
 
 class NREPipe(Pipe):
@@ -32,20 +50,17 @@ class NREPipe(Pipe):
         self,
         estimator: nn.Module,
         criterion: nn.Module = nn.BCEWithLogitsLoss(),
-        embedding: nn.Module = nn.Identity(),
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         self.estimator = estimator
         self.criterion = criterion
-        self.embedding = embedding
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         theta, x = self.move(theta, x)
 
         theta_prime = torch.roll(theta, 1, dims=0)
-        x = self.embedding(x)
 
         ratio, ratio_prime = self.estimator(
             torch.stack((theta, theta_prime)),
@@ -64,24 +79,21 @@ class AMNREPipe(Pipe):
     def __init__(
         self,
         estimator: nn.Module,
-        mask_smpl: MaskSampler,
+        mask_dist: Distribution,
         criterion: nn.Module = nn.BCEWithLogitsLoss(),
-        embedding: nn.Module = nn.Identity(),
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         self.estimator = estimator
-        self.mask_smpl = mask_smpl
+        self.mask_dist = mask_dist
         self.criterion = criterion
-        self.embedding = embedding
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         theta, x = self.move(theta, x)
 
         theta_prime = torch.roll(theta, 1, dims=0)
-        x = self.embedding(x)
-        mask = self.mask_smpl.sample(theta.shape[:-1])
+        mask = self.mask_dist.sample(theta.shape[:-1])
 
         ratio, ratio_prime = self.estimator(
             torch.stack((theta, theta_prime)),
@@ -101,18 +113,15 @@ class NPEPipe(Pipe):
     def __init__(
         self,
         estimator: nn.Module,
-        embedding: nn.Module = nn.Identity(),
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         self.estimator = estimator
-        self.embedding = embedding
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         theta, x = self.move(theta, x)
 
-        x = self.embedding(x)
         log_prob = self.estimator(theta, x)
 
         return -log_prob.mean()
@@ -124,21 +133,18 @@ class AMNPEPipe(Pipe):
     def __init__(
         self,
         estimator: nn.Module,
-        mask_smpl: MaskSampler,
-        embedding: nn.Module = nn.Identity(),
+        mask_dist: Distribution,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         self.estimator = estimator
-        self.mask_smpl = mask_smpl
-        self.embedding = embedding
+        self.mask_dist = mask_dist
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         theta, x = self.move(theta, x)
 
-        x = self.embedding(x)
-        mask = self.mask_smpl.sample(theta.shape[:-1])
+        mask = self.mask_dist.sample(theta.shape[:-1])
 
         log_prob = self.estimator(theta, x, mask)
 
