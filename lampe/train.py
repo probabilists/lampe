@@ -1,4 +1,4 @@
-r"""Training routines"""
+r"""Training helpers"""
 
 import numpy as np
 import torch
@@ -11,54 +11,53 @@ from tqdm import tqdm
 from typing import *
 
 
-def train_epoch(
+def collect(
     pipe: Callable,  # embedding, estimator, criterion, ...
     loader: Iterable,
-    optimizer: Optimizer,
+    optimizer: Optimizer = None,
     grad_clip: float = None,
 ) -> Array:
-    r"""Performs a training epoch"""
+    r"""Sends loader's data through a pipe and collects the results.
+    Optionally performs gradient descent steps."""
 
-    losses = []
+    results = []
 
-    for inputs in loader:
-        l = pipe(*inputs)
+    for data in loader:
+        result = pipe(*data) if type(data) is tuple else pipe(data)
+        results.append(result.tolist())
 
-        losses.append(l.item())
+        if optimizer is None:
+            continue
 
-        if not l.isfinite():
+        loss = result.mean()
+        if not loss.isfinite():
             continue
 
         optimizer.zero_grad()
-
-        l.backward()
+        loss.backward()
 
         if grad_clip is not None:
             norm = nn.utils.clip_grad_norm_(optimizer.parameters(), grad_clip)
-
             if not norm.isfinite():
                 continue
 
         optimizer.step()
 
-    return np.array(losses)
+    return np.array(results)
 
 
-def train_loop(
+def trainbar(
+    epochs: int,
     pipe: Callable,
     loader: Iterable,
     optimizer: Optimizer,
-    epochs: Union[int, range],
     **kwargs,
-) -> Iterator[Tuple[int, Array]]:
-    r"""Loops over training epochs"""
+) -> Iterator[int]:
+    r"""Iterator over training epochs with a progress bar"""
 
-    if type(epochs) is int:
-        epochs = range(epochs)
-
-    with tqdm(epochs, unit='epoch') as tq:
-        for e in tq:
-            losses = train_epoch(
+    with tqdm(range(epochs), unit='epoch') as tq:
+        for epoch in tq:
+            losses = collect(
                 pipe,
                 loader,
                 optimizer,
@@ -66,11 +65,11 @@ def train_loop(
             )
 
             tq.set_postfix(
-                lr=max(optimizer.lrs()),
                 loss=np.nanmean(losses),
+                lr=max(optimizer.lrs()),
             )
 
-            yield e, losses
+            yield epoch
 
 
 def lrs(self) -> Iterator[float]:
