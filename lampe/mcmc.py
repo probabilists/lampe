@@ -26,7 +26,7 @@ class MCMC(ABC):
         self.x_0 = x_0
 
         assert f is not None or log_f is not None, \
-            'either \'f\' or \'log_f\' must be provided'
+            "either 'f' or 'log_f' must be provided"
 
         if f is None:
             self.f = lambda x: log_f(x).exp()
@@ -183,14 +183,14 @@ class InferenceSampler(MetropolisHastings):
         likelihood: Callable = None,  # log p(x | theta)
         posterior: Callable = None,  # log p(theta | x)
         ratio: Callable = None,  # log p(theta | x) - log p(theta)
-        batch_size: int = 2 ** 10,  # 1024
+        batch_size: int = 2**10,  # 1024
         **kwargs,
     ):
         theta_0 = prior.sample((batch_size,))
         x = x.expand((batch_size,) + x.shape)
 
         assert likelihood is not None or posterior is not None or ratio is not None, \
-            'either \'likelihood\', \'posterior\' or \'ratio\' must be provided'
+            "either 'likelihood', 'posterior' or 'ratio' must be provided"
 
         if likelihood is not None:
             log_f = lambda theta: likelihood(theta, x) + prior.log_prob(theta)

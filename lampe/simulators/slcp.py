@@ -57,9 +57,11 @@ class SLCP(Simulator):
         rho = theta[..., 4].tanh()
 
         cov = torch.stack([
-            torch.stack([      s1 ** 2, rho * s1 * s2], dim=-1),
-            torch.stack([rho * s1 * s2,       s2 ** 2], dim=-1),
+            s1 ** 2, rho * s1 * s2,
+            rho * s1 * s2, s2 ** 2,
         ], dim=-1)
+
+        cov = cov.view(cov.shape[:-1] + (2, 2))
 
         # Repeat 4 times
         mu = mu.unsqueeze(-2).repeat_interleave(4, -2)

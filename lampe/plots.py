@@ -152,8 +152,6 @@ def corner(
 
         hists = data
 
-    assert D > 1, 'Corner plots require at least 2 dimensions'
-
     # Figure
     if figure is None:
         kwargs.setdefault('figsize', (6.4, 6.4))

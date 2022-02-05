@@ -25,9 +25,11 @@ try:
     import petitRADTRANS.retrieval.models as models
     import petitRADTRANS.retrieval.parameter as prm
 except Exception as e:
-    print(f'ImportWarning: {e}. \'EES\' requires')
-    print('  conda install -c conda-forge multinest gfortran')
-    print('  pip install petitRADTRANS')
+    print(
+        f"ImportWarning: {e}. 'EES' requires",
+        "  conda install -c conda-forge multinest gfortran",
+        "  pip install petitRADTRANS",
+    )
 
 from numpy import ndarray as Array
 from torch import Tensor, BoolTensor

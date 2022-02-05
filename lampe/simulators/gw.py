@@ -39,8 +39,10 @@ try:
     from pycbc.psd import welch
     from pycbc.waveform import get_fd_waveform
 except Exception as e:
-    print(f'ImportWarning: {e}. \'GW\' requires')
-    print('  pip install gwpy pycbc')
+    print(
+        f"ImportWarning: {e}. 'GW' requires",
+        "  pip install gwpy pycbc",
+    )
 
 from numpy import ndarray as Array
 from torch import Tensor, BoolTensor
@@ -395,9 +397,9 @@ def whiten_dft(dft: Array, nsd: Array) -> np.ndarray:
 
 @cache(disk=True)
 def svd_basis(
-    n_components: int = 2 ** 7,  # 128
-    n_samples: int = 2 ** 15,  # 32768
-    batch_size: int = 2 ** 10,  # 1024
+    n_components: int = 2**7,  # 128
+    n_samples: int = 2**15,  # 32768
+    batch_size: int = 2**10,  # 1024
     seed: int = 0,
     **kwargs,
 ) -> Array:
@@ -406,11 +408,11 @@ def svd_basis(
     prior = gw_prior()
     simulator = GW(reduced_basis=False, noisy=False, **kwargs)
 
-    print('Generating samples...')
+    print("Generating samples...")
 
     xs = []
 
-    for _ in tqdm(range(n_samples // batch_size), unit_scale=batch_size):
+    for _ in tqdm(range(n_samples // batch_size), unit='sample', unit_scale=batch_size):
         theta = prior.sample((batch_size,))
         theta[..., 4] = lower[4]  # fixed luminosity distance
         theta = theta.numpy().astype(np.float64)
@@ -420,7 +422,7 @@ def svd_basis(
     x = np.stack(xs).view(np.complex128)
     x = x.reshape(-1, x.shape[-1])
 
-    print('Computing SVD basis...')
+    print("Computing SVD basis...")
 
     try:
         from sklearn.utils.extmath import randomized_svd
@@ -437,6 +439,6 @@ def svd_basis(
 
     V = Vh.T.conj()
 
-    print('Done!')
+    print("Done!")
 
     return V

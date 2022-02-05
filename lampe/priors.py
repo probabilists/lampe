@@ -114,7 +114,7 @@ class Sort(Distribution):
     ):
         super().__init__()
 
-        assert len(base.event_shape) < 1, 'base must be scalar'
+        assert len(base.event_shape) < 1, "base must be scalar"
 
         self.base = base
         self.n = n
@@ -166,8 +166,8 @@ class TopK(Sort):
         n: int = 2,
         **kwargs,
     ):
-        assert base.cdf(base.sample()) >= 0, 'base must implement cdf'
-        assert 1 <= k <= n, 'k should be in [1, n]'
+        assert base.cdf(base.sample()) >= 0, "base must implement cdf"
+        assert 1 <= k < n, "k should be in [1, n)"
 
         super().__init__(base, n, **kwargs)
 

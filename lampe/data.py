@@ -6,6 +6,7 @@ import random
 import torch
 import torch.utils.data as data
 
+from numpy.typing import ArrayLike
 from pathlib import Path
 from torch import Tensor
 from torch.distributions import Distribution
@@ -20,7 +21,7 @@ class IterableSimulatorDataset(data.IterableDataset):
         self,
         prior: Distribution,
         simulator: Callable,
-        batch_shape: Tuple[int] = (),
+        batch_shape: torch.Size = (),
         numpy: bool = False,
     ):
         super().__init__()
@@ -50,7 +51,7 @@ class SimulatorLoader(data.DataLoader):
         self,
         prior: Distribution,
         simulator: Callable,
-        batch_size: int = 2 ** 10,  # 1024
+        batch_size: int = 2**10,  # 1024
         batched: bool = False,
         numpy: bool = False,
         rng: torch.Generator = None,
@@ -73,7 +74,7 @@ class SimulatorLoader(data.DataLoader):
 
     @staticmethod
     def worker_init(*args) -> None:
-        seed = torch.initial_seed() % 2 ** 32
+        seed = torch.initial_seed() % 2**32
         np.random.seed(seed)
         random.seed(seed)
 
@@ -84,8 +85,8 @@ class H5Loader(data.Dataset):
     def __init__(
         self,
         *filenames,
-        batch_size: int = 2 ** 10,  # 1024
-        group_by: str = 2 ** 4,  # 16
+        batch_size: int = 2**10,  # 1024
+        group_by: str = 2**4,  # 16
         pin_memory: bool = False,
         shuffle: bool = True,
         seed: int = None,
@@ -156,10 +157,11 @@ class H5Loader(data.Dataset):
 
 
 def h5save(
-    iterable: Iterable[Tuple[Tensor, Tensor]],
+    iterable: Iterable[Tuple[ArrayLike, ArrayLike]],
     filename: str,
-    size: int = 2 ** 18,  # 262144
-    chunk_size: int = 2 ** 12,  # 4096
+    size: int,
+    chunk_size: int = 2**12,  # 4096
+    dtype: type = np.float32,
     **kwargs,
 ) -> None:
     r"""Save (theta, x) batches to an HDF5 file"""
@@ -175,23 +177,22 @@ def h5save(
 
         ## Datasets
         theta, x = map(np.asarray, next(iter(iterable)))
+        theta, x = theta[0], x[0]
 
-        shape = theta.shape[1:]
         f.create_dataset(
             'theta',
-            (size,) + shape,
-            chunks=(chunk_size,) + shape,
-            dtype=theta.dtype,
-            maxshape=(None,) + shape,
+            (size,) + theta.shape,
+            chunks=(chunk_size,) + theta.shape,
+            dtype=dtype,
+            maxshape=(None,) + theta.shape,
         )
 
-        shape = x.shape[1:]
         f.create_dataset(
             'x',
-            (size,) + shape,
-            chunks=(chunk_size,) + shape,
-            dtype=x.dtype,
-            maxshape=(None,) + shape,
+            (size,) + x.shape,
+            chunks=(chunk_size,) + x.shape,
+            dtype=dtype,
+            maxshape=(None,) + x.shape,
         )
 
         ## Samples

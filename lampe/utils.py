@@ -29,7 +29,7 @@ def cache(disk: bool = False, maxsize: int = None, **kwargs) -> Callable:
         try:
             from joblib import Memory
         except ImportError as e:
-            print(f'ImportWarning: {e}. Fallback to regular cache.')
+            print(f"ImportWarning: {e}. Fallback to regular cache.")
         else:
             memory = Memory(os.path.expanduser('~/.cache'), mmap_mode='c', verbose=0)
             return partial(memory.cache, **kwargs)
