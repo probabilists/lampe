@@ -16,7 +16,6 @@ Shapes:
 import numpy as np
 import os
 import torch
-import warnings
 
 try:
     os.environ['pRT_input_data_path'] = os.path.expanduser('~/.cache/lampe/pRT/data')
@@ -85,22 +84,23 @@ def ees_prior(mask: BoolTensor = None) -> Distribution:
 class EES(Simulator):
     r"""Exoplanet Emission Spectrum (EES) simulator"""
 
-    def __init__(self, log_scale: bool = True, **kwargs):
+    def __init__(self, noisy: bool = True, seed: int = None, **kwargs):
         super().__init__()
 
-        self.log_scale = log_scale
-
+        # Constants
         default = {
             'D_pl': 41.2925 * prt.nat_cst.pc,
             'pressure_scaling': 10,
             'pressure_simple': 100,
             'pressure_width': 3,
+            'scale': 1e16,
         }
 
         self.constants = {
             k: kwargs.get(k, v)
             for k, v in default.items()
         }
+        self.scale = self.constants.pop('scale')
 
         self.atmosphere = cache(prt.Radtrans, disk=True)(
             line_species=[
@@ -131,6 +131,11 @@ class EES(Simulator):
 
         self.atmosphere.setup_opa_structure(np.logspace(-6, 3, levels))
 
+        # RNG
+        self.noisy = noisy
+        self.sigma = 1.25754e-17 * self.scale
+        self.rng = np.random.default_rng(seed)
+
     def __call__(self, theta: Array) -> Array:
         r""" x ~ p(x | theta) """
 
@@ -145,16 +150,17 @@ class EES(Simulator):
 
         x = emission_spectrum(self.atmosphere, **theta, **self.constants)
         x = np.stack(x)
+        x = self.process(x)
 
-        return self.process(x)
+        if self.noisy:
+            x = x + self.sigma * self.rng.standard_normal(x.shape)
+
+        return x
 
     def process(self, x: Array) -> Array:
         r"""Processes spectra into network-friendly inputs"""
 
-        if self.log_scale:
-            x = np.log(x * 1e18) / np.log(1e6)
-
-        return x
+        return x * self.scale
 
 
 @vectorize(otypes=[Array])
@@ -166,7 +172,7 @@ def emission_spectrum(
     log_X_MgSiO3: float,
     **kwargs,
 ) -> Array:
-    r"""Simulate emission spectrum
+    r"""Simulates emission spectrum
 
     References:
         https://gitlab.com/mauricemolli/petitRADTRANS/-/blob/master/petitRADTRANS/retrieval/models.py#L39
@@ -186,58 +192,3 @@ def emission_spectrum(
 
     _, spectrum = models.emission_model_diseq(atmosphere, parameters, AMR=True)
     return spectrum
-
-
-def fixed_length_amr(p_clouds: Array, pressures: Array, scaling: int = 10, width: int = 3) -> Tuple[Array, Array]:
-    r"""This function takes in the cloud base pressures for each cloud,
-    and returns an array of pressures with a high resolution mesh
-    in the region where the clouds are located.
-
-    The output length is always
-        len(pressures) // scaling + len(p_clouds) * (scaling - 1) * width
-
-    References:
-        https://gitlab.com/mauricemolli/petitRADTRANS/-/blob/master/petitRADTRANS/retrieval/models.py#L802
-    """
-
-    length = len(pressures)
-    cloud_indices = np.searchsorted(pressures, np.asarray(p_clouds))
-
-    # High resolution intervals
-    def bounds(center: int, width: int) -> Tuple[int, int]:
-        upper = min(center + width // 2, length)
-        lower = max(upper - width, 0)
-        return lower, lower + width
-
-    intervals = [bounds(idx, scaling * width) for idx in cloud_indices]
-
-    # Merge intervals
-    while True:
-        intervals, stack = sorted(intervals), []
-
-        for interval in intervals:
-            if stack and stack[-1][1] >= interval[0]:
-                last = stack.pop()
-                interval = bounds(
-                    (last[0] + max(last[1], interval[1]) + 1) // 2,
-                    last[1] - last[0] + interval[1] - interval[0],
-                )
-
-            stack.append(interval)
-
-        if len(intervals) == len(stack):
-            break
-        intervals = stack
-
-    # Intervals to indices
-    indices = [np.arange(0, length, scaling)]
-
-    for interval in intervals:
-        indices.append(np.arange(*interval))
-
-    indices = np.unique(np.concatenate(indices))
-
-    return pressures[indices], indices
-
-
-models.fixed_length_amr = fixed_length_amr

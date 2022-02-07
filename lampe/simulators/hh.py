@@ -17,7 +17,7 @@ Shapes:
 """
 
 import numpy as np
-import scipy.stats as sp
+import scipy.stats as ss
 import torch
 
 from numpy import ndarray as Array
@@ -62,7 +62,7 @@ def hh_prior(mask: BoolTensor = None) -> Distribution:
 class HH(Simulator):
     r"""Hodgkin-Huxley (HH) simulator"""
 
-    def __init__(self, summary: bool = True, **kwargs):
+    def __init__(self, summary: bool = True, seed: int = None, **kwargs):
         super().__init__()
 
         # Constants
@@ -79,13 +79,16 @@ class HH(Simulator):
             for k, v in default.items()
         }
 
-        # Summarize statistics
+        # Summary statistics
         self.summary = summary
+
+        # RNG
+        self.rng = np.random.default_rng(seed)
 
     def __call__(self, theta: Array) -> Array:
         r""" x ~ p(x | theta) """
 
-        x = voltage_trace(theta, self.constants)
+        x = voltage_trace(theta, self.constants, self.rng)
 
         if self.summary:
             x = summarize(x, self.constants)
@@ -93,8 +96,12 @@ class HH(Simulator):
         return x
 
 
-def voltage_trace(theta: Array, constants: Dict[str, float]) -> Array:
-    r"""Simulate Hodgkin-Huxley voltage trace
+def voltage_trace(
+    theta: Array,
+    constants: Dict[str, float],
+    rng: np.random.Generator,
+) -> Array:
+    r"""Simulates Hodgkin-Huxley voltage trace
 
     References:
         https://github.com/mackelab/sbi/blob/main/examples/HH_helper_functions.py
@@ -168,7 +175,7 @@ def voltage_trace(theta: Array, constants: Dict[str, float]) -> Array:
             + E_K * g_M * p
             + E_leak * g_leak
             + I * (pad <= t < T - pad)
-            + sigma * np.random.randn(*V.shape) / dt ** 0.5  # noise
+            + sigma * rng.standard_normal(V.shape) / dt ** 0.5
         ) / C
 
         V = V_inf + (V - V_inf) * exp(-dt / tau_V)
@@ -185,7 +192,7 @@ def voltage_trace(theta: Array, constants: Dict[str, float]) -> Array:
 
 
 def summarize(x: Array, constants: Dict[str, float]) -> Array:
-    r"""Compute voltage trace summary statistics"""
+    r"""Computes voltage trace summary statistics"""
 
     # Constants
     T = constants['duration']
@@ -208,8 +215,8 @@ def summarize(x: Array, constants: Dict[str, float]) -> Array:
     x = x[..., (pad <= t) * (t < T - pad)]
     x_mean = np.mean(x, axis=-1)
     x_var = np.var(x, axis=-1)
-    x_skew = sp.skew(x, axis=-1)
-    x_kurtosis = sp.kurtosis(x, axis=-1)
+    x_skew = ss.skew(x, axis=-1)
+    x_kurtosis = ss.kurtosis(x, axis=-1)
 
     return np.stack([
         spikes,

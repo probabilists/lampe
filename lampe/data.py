@@ -164,7 +164,7 @@ def h5save(
     dtype: type = np.float32,
     **kwargs,
 ) -> None:
-    r"""Save (theta, x) batches to an HDF5 file"""
+    r"""Saves (theta, x) batches to an HDF5 file"""
 
     # File
     filename = Path(filename)

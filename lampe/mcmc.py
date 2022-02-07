@@ -73,7 +73,7 @@ class MCMC(ABC):
         bins: Union[int, List[int]],
         bounds: Tuple[Tensor, Tensor],
     ) -> Tensor:
-        r"""Evaluate f(x) for all x in grid"""
+        r"""Evaluates f(x) for all x in grid"""
 
         x = self.x_0
 

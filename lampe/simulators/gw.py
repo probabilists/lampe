@@ -136,6 +136,7 @@ class GW(Simulator):
         self,
         reduced_basis: bool = True,
         noisy: bool = True,
+        seed: int = None,
         **kwargs,
     ):
         super().__init__()
@@ -158,8 +159,8 @@ class GW(Simulator):
             for k, v in default.items()
         }
 
-        self.event_nsd = event_nsd(**self.constants)
-        self.event_nsd = crop_dft(self.event_nsd, **self.constants)
+        self.nsd = event_nsd(**self.constants)
+        self.nsd = crop_dft(self.nsd, **self.constants)
 
         # Reduced SVD basis
         if reduced_basis:
@@ -167,8 +168,9 @@ class GW(Simulator):
         else:
             self.basis = None
 
-        # Noise
+        # RNG
         self.noisy = noisy
+        self.rng = np.random.default_rng(seed)
 
     def __call__(self, theta: Array) -> Array:
         r""" x ~ p(x | theta) """
@@ -177,7 +179,7 @@ class GW(Simulator):
         x = self.process(x)
 
         if self.noisy:
-            x = x + np.random.randn(*x.shape)
+            x = x + self.rng.standard_normal(x.shape)
 
         return x
 
@@ -185,7 +187,7 @@ class GW(Simulator):
         r"""Processes waveforms into network-friendly inputs"""
 
         x = crop_dft(x, **self.constants)
-        x = whiten_dft(x, self.event_nsd)
+        x = x / self.nsd
 
         if self.basis is not None:
             x = x @ self.basis
@@ -195,14 +197,14 @@ class GW(Simulator):
 
 @cache
 def ligo_detector(name: str):
-    r"""Fetch LIGO detector"""
+    r"""Fetches LIGO detector"""
 
     return Detector(name)
 
 
 @cache
 def event_gps(event: str = 'GW150914') -> float:
-    r"""Fetch event's GPS time"""
+    r"""Fetches event's GPS time"""
 
     return Merger(event).data['GPS']
 
@@ -233,9 +235,9 @@ def event_nsd(
     detectors: Tuple[str, ...],
     duration: float,  # s
     segment: float,  # s
-    **kwargs,
+    **absorb,
 ) -> Array:
-    r"""Fetch event's Noise Spectral Density (NSD)
+    r"""Fetches event's Noise Spectral Density (NSD)
 
     Wikipedia:
         https://en.wikipedia.org/wiki/Noise_spectral_density
@@ -267,9 +269,9 @@ def event_dft(
     detectors: Tuple[str, ...],
     duration: float,  # s
     buffer: float,  # s
-    **kwargs,
+    **absorb,
 ) -> Array:
-    r"""Fetch event's Discrete Fourier Transform (DFT)"""
+    r"""Fetches event's Discrete Fourier Transform (DFT)"""
 
     time = event_gps(event) + buffer
 
@@ -288,14 +290,14 @@ def event_dft(
 
 @vectorize(otypes=[float] * 7)
 def lal_spins(*args) -> Tuple[float, ...]:
-    r"""Convert LALInference geometric parameters to LALSimulation spins"""
+    r"""Converts LALInference geometric parameters to LALSimulation spins"""
 
     return tuple(SimInspiralTransformPrecessingNewInitialConditions(*args))
 
 
 @vectorize(otypes=[Array, Array])
 def plus_cross(**kwargs) -> Tuple[Array, Array]:
-    r"""Simulate frequency-domain plus and cross polarizations
+    r"""Simulates frequency-domain plus and cross polarizations
     of gravitational wave
     """
 
@@ -312,9 +314,9 @@ def gravitational_waveform(
     sample_rate: float,  # Hz
     f_ref: float,  # Hz
     f_lower: float,  # Hz
-    **kwargs,
+    **absorb,
 ) -> Array:
-    r"""Simulate a frequency-domain gravitational wave projected onto LIGO detectors
+    r"""Simulates a frequency-domain gravitational wave projected onto LIGO detectors
 
     References:
         http://pycbc.org/pycbc/latest/html/waveform.html
@@ -382,17 +384,11 @@ def crop_dft(
     duration: float,  # s
     sample_rate: float,  # Hz
     f_lower: float,  # Hz
-    **kwargs,
+    **absorb,
 ) -> Array:
-    r"""Crop low and high frequencies of Discrete Fourier Transform (DFT)"""
+    r"""Crops low and high frequencies of Discrete Fourier Transform (DFT)"""
 
     return dft[..., int(duration * f_lower):int(duration * sample_rate / 2) + 1]
-
-
-def whiten_dft(dft: Array, nsd: Array) -> np.ndarray:
-    r"""Whiten Discrete Fourier Transform (DFT) w.r.t. Noise Spectral Density (NSD)"""
-
-    return dft / nsd
 
 
 @cache(disk=True)
@@ -403,7 +399,7 @@ def svd_basis(
     seed: int = 0,
     **kwargs,
 ) -> Array:
-    r"""Build Singular Value Decompostition (SVD) basis"""
+    r"""Builds Singular Value Decompostition (SVD) basis"""
 
     prior = gw_prior()
     simulator = GW(reduced_basis=False, noisy=False, **kwargs)
