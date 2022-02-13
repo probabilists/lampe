@@ -14,17 +14,13 @@ class Pipe(nn.Module):
     def __init__(
         self,
         embedding: nn.Module = nn.Identity(),
-        filtr: BoolTensor = None,
+        hook: Callable = None,
         device: torch.device = None,
     ):
         super().__init__()
 
         self.embedding = embedding
-
-        if filtr is None:
-            self.filtr = None
-        else:
-            self.register_buffer('filtr', filtr)
+        self.hook = hook
 
         self.register_buffer('dummy', torch.tensor(0., device=device))
 
@@ -32,11 +28,11 @@ class Pipe(nn.Module):
     def device(self) -> torch.device:
         return self.dummy.device
 
-    def move(self, theta: Tensor, x: Tensor) -> Tensor:
+    def process(self, theta: Tensor, x: Tensor) -> Tensor:
         theta, x = theta.to(self.device), x.to(self.device)
 
-        if self.filtr is not None:
-            theta = theta[..., self.filtr]
+        if self.hook is not None:
+            theta, x = self.hook(theta, x)
 
         x = self.embedding(x)
 
@@ -58,7 +54,7 @@ class NREPipe(Pipe):
         self.criterion = criterion
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        theta, x = self.move(theta, x)
+        theta, x = self.process(theta, x)
 
         theta_prime = torch.roll(theta, 1, dims=0)
 
@@ -90,7 +86,7 @@ class AMNREPipe(Pipe):
         self.criterion = criterion
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        theta, x = self.move(theta, x)
+        theta, x = self.process(theta, x)
 
         theta_prime = torch.roll(theta, 1, dims=0)
         mask = self.mask_dist.sample(theta.shape[:-1])
@@ -120,7 +116,7 @@ class NPEPipe(Pipe):
         self.estimator = estimator
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        theta, x = self.move(theta, x)
+        theta, x = self.process(theta, x)
 
         log_prob = self.estimator(theta, x)
 
@@ -142,7 +138,7 @@ class AMNPEPipe(Pipe):
         self.mask_dist = mask_dist
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        theta, x = self.move(theta, x)
+        theta, x = self.process(theta, x)
 
         mask = self.mask_dist.sample(theta.shape[:-1])
 
