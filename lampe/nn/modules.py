@@ -21,6 +21,37 @@ ACTIVATIONS = {
 }
 
 
+class Broadcast(nn.Module):
+    r"""Broadcast layer
+
+    Args:
+        keep: The number of dimensions to not broadcast
+    """
+
+    def __init__(self, keep: int = 0):
+        super().__init__()
+
+        self.keep = keep
+
+    def split(self, shape: torch.Size) -> Tuple[torch.Size, torch.Size]:
+        index = len(shape) - self.keep
+        return shape[:index], shape[index:]
+
+    def forward(self, *xs: Tensor) -> List[Tensor]:
+        splits = [self.split(x.shape) for x in xs]
+
+        before, after = zip(*splits)
+        before = torch.broadcast_shapes(*before)
+
+        return [
+            torch.broadcast_to(x, before + a)
+            for x, a in zip(xs, after)
+        ]
+
+    def extra_repr(self) -> str:
+        return f'keep={self.keep}'
+
+
 class Affine(nn.Module):
     r"""Element-wise affine layer
 
@@ -57,9 +88,9 @@ class BatchNorm0d(nn.BatchNorm1d):
     def forward(self, x: Tensor) -> Tensor:
         shape = x.shape
 
-        x = x.view(-1, shape[-1])
+        x = x.reshape(-1, shape[-1])
         x = super().forward(x)
-        x = x.view(shape)
+        x = x.reshape(shape)
 
         return x
 
@@ -195,6 +226,12 @@ class NRE(nn.Module):
     ):
         super().__init__()
 
+        if moments is not None:
+            mu, sigma = moments
+
+        self.standardize = nn.Identity() if moments is None else Affine(-mu / sigma, 1 / sigma)
+        self.broadcast = Broadcast(keep=1)
+
         if arch == 'ResNet':
             arch = ResNet
         else:  # arch == 'MLP'
@@ -202,14 +239,11 @@ class NRE(nn.Module):
 
         self.net = arch(theta_size + x_size, 1, **kwargs)
 
-        if moments is not None:
-            mu, sigma = moments
-
-        self.standardize = nn.Identity() if moments is None else Affine(-mu / sigma, 1 / sigma)
-
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         theta = self.standardize(theta)
-        return self.net(torch.cat([theta, x], dim=-1)).squeeze(-1)
+        theta, x = self.broadcast(theta, x)
+
+        return self.net(torch.cat((theta, x), dim=-1)).squeeze(-1)
 
 
 class MNRE(nn.Module):
@@ -340,9 +374,10 @@ class AMNRE(NRE):
             theta = torch.where(mask, theta, zeros)
 
         theta = self.standardize(theta) * mask
-        theta = torch.cat(torch.broadcast_tensors(theta, mask * 2. - 1.), dim=-1)
+        theta = torch.cat(self.broadcast(theta, mask * 2. - 1.), dim=-1)
+        theta, x = self.broadcast(theta, x)
 
-        return self.net(torch.cat([theta, x], dim=-1)).squeeze(-1)
+        return self.net(torch.cat((theta, x), dim=-1)).squeeze(-1)
 
 
 class NPE(nn.Module):
@@ -367,10 +402,13 @@ class NPE(nn.Module):
     ):
         super().__init__()
 
+        self.broadcast = Broadcast(keep=1)
         self.flow = MAF(theta_size, x_size, moments=moments, **kwargs)
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r""" log p(theta | x) """
+
+        theta, x = self.broadcast(theta, x)
 
         return self.flow.log_prob(theta, x)
 
@@ -434,13 +472,6 @@ class AMNPE(NPE):
 
         return self
 
-    @staticmethod
-    def collate(x: Tensor, mask: BoolTensor) -> Tensor:
-        shape = torch.broadcast_shapes(x.shape[:-1], mask.shape[:-1])
-        mask = mask.expand(shape + mask.shape[-1:])
-
-        return torch.cat([x, mask * 2. - 1.], dim=-1)
-
     def forward(
         self,
         theta: Tensor,  # (N, D)
@@ -457,7 +488,8 @@ class AMNPE(NPE):
         else:
             theta = torch.where(mask, theta, theta_prime)
 
-        x = self.collate(x, mask)
+        x = torch.cat(self.broadcast(x, mask * 2. - 1.), dim=-1)
+        theta, x = self.broadcast(theta, x)
 
         return self.flow.log_prob(theta, x) - self.prior.log_prob(theta)
 
@@ -470,6 +502,6 @@ class AMNPE(NPE):
         if mask is None:
             mask = self.default
 
-        x = self.collate(x, mask)
+        x = torch.cat(self.broadcast(x, mask * 2. - 1.), dim=-1)
 
         return self.flow.sample(x, shape)[..., mask]

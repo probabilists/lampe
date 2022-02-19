@@ -30,7 +30,10 @@ class NormalizingFlow(Flow):
     def log_prob(self, x: Tensor, y: Tensor) -> Tensor:
         r""" log p(x | y) """
 
-        return super().log_prob(x, y)
+        return super().log_prob(
+            x.reshape(-1, x.shape[-1]),
+            y.reshape(-1, y.shape[-1]),
+        ).reshape(x.shape[:-1])
 
     @torch.no_grad()
     def sample(self, y: Tensor, shape: torch.Size = ()) -> Tensor:
@@ -41,8 +44,8 @@ class NormalizingFlow(Flow):
 
         size = torch.Size(shape).numel()
 
-        x = super()._sample(size, y[None])
-        x = x.view(y.shape[:-1] + shape + x.shape[-1:])
+        x = super()._sample(size, y.reshape(-1, y.shape[-1]))
+        x = x.reshape(y.shape[:-1] + shape + x.shape[-1:])
 
         return x
 
