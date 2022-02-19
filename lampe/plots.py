@@ -156,7 +156,6 @@ def corner(
     if figure is None:
         kwargs.setdefault('figsize', (6.4, 6.4))
 
-        new = True
         figure, axes = plt.subplots(
             D, D,
             squeeze=False,
@@ -164,9 +163,10 @@ def corner(
             gridspec_kw={'wspace': 0., 'hspace': 0.},
             **kwargs,
         )
+        new = True
     else:
-        new = False
         axes = np.asarray(figure.axes).reshape(D, D)
+        new = False
 
     # Legend
 
@@ -294,5 +294,45 @@ def corner(
             ax.label_outer()
 
     figure.align_labels()
+
+    return figure
+
+
+def pp(
+    p: ArrayLike,
+    color: Union[str, tuple] = None,
+    label: str = None,
+    figure: mpl.figure.Figure = None,
+    **kwargs,
+) -> mpl.figure.Figure:
+    r"""P-P plot"""
+
+    # Figure
+    if figure is None:
+        kwargs.setdefault('figsize', (3.2, 3.2))
+
+        figure, ax = plt.subplots(**kwargs)
+        new = True
+    else:
+        ax = figure.axes.squeeze()
+        new = False
+
+    # CDF
+    p = np.sort(np.asarray(p))
+    p = np.hstack([0, p, 1])
+    cdf = np.linspace(0, 1, len(p))
+
+    # Plot
+    if new:
+        ax.plot([0, 1], [0, 1], color='k', linestyle='--')
+
+    ax.plot(p, cdf, color=color, label=label)
+
+    ax.grid()
+    ax.set_xlabel(r'$p$')
+    ax.set_ylabel(r'CDF$(p)$')
+
+    if label is not None:
+        ax.legend(loc='upper left')
 
     return figure
