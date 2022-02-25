@@ -41,7 +41,7 @@ class UniformMask(MaskDistribution):
     r"""Samples uniformly among all masks of size `size`"""
 
     def __init__(self, size: int):
-        super().__init__(event_shape=(self.size,))
+        super().__init__(event_shape=(size,))
 
         self.size = size
 
@@ -57,7 +57,7 @@ class PoissonMask(MaskDistribution):
     with the number of positive bits following a Poisson distribution"""
 
     def __init__(self, size: int, lmbda: float = 1.):
-        super().__init__(event_shape=(self.size,))
+        super().__init__(event_shape=(size,))
 
         self.size = size
         self.lmbda = lmbda

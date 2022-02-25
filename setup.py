@@ -10,7 +10,7 @@ with open('requirements.txt', 'r') as f:
 
 setuptools.setup(
     name='lampe',
-    version='0.2.10',
+    version='0.2.11',
     packages=setuptools.find_packages(),
     description='Likelihood-free AMortized Posterior Estimation with PyTorch',
     keywords='parameter inference bayes posterior amortized likelihood ratio mcmc torch',
