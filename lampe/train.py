@@ -1,10 +1,8 @@
 r"""Training helpers"""
 
-import numpy as np
 import torch
 import torch.nn as nn
 
-from numpy import ndarray as Array
 from torch import Tensor
 from torch.optim import Optimizer
 from tqdm import tqdm
@@ -16,7 +14,7 @@ def collect(
     loader: Iterable,
     optimizer: Optimizer = None,
     grad_clip: float = None,
-) -> Array:
+) -> Tensor:
     r"""Sends loader's data through a pipe and collects the results.
     Optionally performs gradient descent steps."""
 
@@ -24,7 +22,7 @@ def collect(
 
     for data in loader:
         result = pipe(*data) if type(data) is tuple else pipe(data)
-        results.append(result.tolist())
+        results.append(result.detach())
 
         if optimizer is None:
             continue
@@ -43,7 +41,7 @@ def collect(
 
         optimizer.step()
 
-    return np.array(results)
+    return torch.stack(results)
 
 
 def trainbar(
@@ -65,7 +63,7 @@ def trainbar(
             )
 
             tq.set_postfix(
-                loss=np.nanmean(losses),
+                loss=torch.nanmean(losses).item(),
                 lr=max(optimizer.lrs()),
             )
 
