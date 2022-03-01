@@ -86,15 +86,15 @@ class MAF(NormalizingFlow):
             kwargs.setdefault('num_bins', 8)
             kwargs.setdefault('tail_bound', 1.)
 
-            tf = T.MaskedPiecewiseRationalQuadraticAutoregressiveTransform
+            MAT = T.MaskedPiecewiseRationalQuadraticAutoregressiveTransform
         elif arch == 'UMNN':
             kwargs.setdefault('integrand_net_layers', [64, 64, 64])
             kwargs.setdefault('cond_size', 32)
             kwargs.setdefault('nb_steps', 32)
 
-            tf = T.MaskedUMNNAutoregressiveTransform
+            MAT = T.MaskedUMNNAutoregressiveTransform
         else:  # arch == 'affine'
-            tf = T.MaskedAffineAutoregressiveTransform
+            MAT = T.MaskedAffineAutoregressiveTransform
 
         transforms = []
 
@@ -104,7 +104,7 @@ class MAF(NormalizingFlow):
 
         for _ in range(num_transforms):
             transforms.extend([
-                tf(
+                MAT(
                     features=x_size,
                     context_features=y_size,
                     **kwargs,

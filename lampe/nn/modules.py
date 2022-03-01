@@ -162,8 +162,8 @@ class ResBlock(MLP):
         return input + super().forward(input)
 
 
-class ResNet(nn.Sequential):
-    r"""Residual Network (ResNet)
+class ResMLP(nn.Sequential):
+    r"""Residual Multi-Layer Perceptron (ResMLP)
 
     Args:
         in_features: The number of input features.
@@ -206,9 +206,9 @@ class NRE(nn.Module):
         theta_size: The size of the parameters.
         x_size: The size of the observations.
         moments: The parameters moments (mu, sigma) for standardization.
-        arch: The network architecture (`MLP` or `ResNet`).
+        arch: The network architecture (`MLP` or `ResMLP`).
 
-        **kwargs are passed to `MLP` or `ResNet`.
+        **kwargs are passed to `MLP` or `ResMLP`.
 
     References:
         [1] Likelihood-free MCMC with Amortized Approximate Ratio Estimators
@@ -232,8 +232,8 @@ class NRE(nn.Module):
         self.standardize = nn.Identity() if moments is None else Affine(-mu / sigma, 1 / sigma)
         self.broadcast = Broadcast(keep=1)
 
-        if arch == 'ResNet':
-            arch = ResNet
+        if arch == 'ResMLP':
+            arch = ResMLP
         else:  # arch == 'MLP'
             arch = MLP
 
