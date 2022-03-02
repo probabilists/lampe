@@ -72,6 +72,7 @@ class MAF(NormalizingFlow):
         y_size: int,
         arch: str = 'affine',  # ['PRQ', 'UMNN']
         num_transforms: int = 5,
+        lu_linear: bool = False,
         moments: Tuple[Tensor, Tensor] = None,
         **kwargs,
     ):
@@ -84,7 +85,7 @@ class MAF(NormalizingFlow):
         if arch == 'PRQ':
             kwargs['tails'] = 'linear'
             kwargs.setdefault('num_bins', 8)
-            kwargs.setdefault('tail_bound', 1.)
+            kwargs.setdefault('tail_bound', 3.)
 
             MAT = T.MaskedPiecewiseRationalQuadraticAutoregressiveTransform
         elif arch == 'UMNN':
@@ -111,6 +112,9 @@ class MAF(NormalizingFlow):
                 ),
                 T.RandomPermutation(features=x_size),
             ])
+
+            if lu_linear:
+                transforms.append(T.LULinear(features=x_size))
 
         base = D.StandardNormal((x_size,))
 
