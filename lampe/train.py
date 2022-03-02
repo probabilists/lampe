@@ -9,6 +9,18 @@ from tqdm import tqdm
 from typing import *
 
 
+def lrs(self) -> Iterator[float]:
+    yield from (group['lr'] for group in self.param_groups)
+
+setattr(Optimizer, 'lrs', lrs)
+
+
+def parameters(self) -> Iterator[Tensor]:
+    yield from (p for group in self.param_groups for p in group['params'])
+
+setattr(Optimizer, 'parameters', parameters)
+
+
 def collect(
     pipe: Callable,  # embedding, estimator, criterion, ...
     loader: Iterable,
@@ -70,13 +82,41 @@ def trainbar(
             yield epoch
 
 
-def lrs(self) -> Iterator[float]:
-    yield from (group['lr'] for group in self.param_groups)
+class PlateauDetector(object):
+    r"""Sequence abstraction to detect plateau"""
 
-setattr(Optimizer, 'lrs', lrs)
+    def __init__(
+        self,
+        threshold: float = 1e-2,
+        patience: int = 16,
+        mode: str = 'min',  # 'max'
+    ):
+        self.threshold = threshold
+        self.patience = patience
+        self.mode = mode
 
+        self.sequence = [float('+inf' if mode == 'min' else '-inf')]
+        self.best_time = 0
 
-def parameters(self) -> Iterator[Tensor]:
-    yield from (p for group in self.param_groups for p in group['params'])
+    @property
+    def time(self) -> int:
+        return len(self.sequence) - 1
 
-setattr(Optimizer, 'parameters', parameters)
+    @property
+    def best(self) -> float:
+        return self.sequence[self.best_time]
+
+    def step(self, value: float) -> None:
+        self.sequence.append(value)
+
+        if self.mode == 'min':
+            better = value < self.best * (1 - self.threshold)
+        else:
+            better = value > self.best * (1 + self.threshold)
+
+        if better:
+            self.best_time = self.time
+
+    @property
+    def plateau(self) -> bool:
+        return self.time > self.best_time + self.patience
