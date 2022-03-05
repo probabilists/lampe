@@ -175,7 +175,7 @@ def emission_spectrum(
     r"""Simulates emission spectrum
 
     References:
-        https://gitlab.com/mauricemolli/petitRADTRANS/-/blob/master/petitRADTRANS/retrieval/models.py#L39
+        https://gitlab.com/mauricemolli/petitRADTRANS/-/blob/master/petitRADTRANS/retrieval/models.py#L41
     """
 
     kwargs.update({
@@ -192,3 +192,29 @@ def emission_spectrum(
 
     _, spectrum = models.emission_model_diseq(atmosphere, parameters, AMR=True)
     return spectrum
+
+
+@vectorize(signature='(m),(n)->(n)')
+def pt_profile(theta: Array, pressures: Array) -> Array:
+    r"""Calculates the pressure-temperature profile
+
+    References:
+        https://gitlab.com/mauricemolli/petitRADTRANS/-/blob/master/petitRADTRANS/retrieval/models.py#L639
+    """
+
+    CO, FeH, *_, T_int, T3, T2, T1, alpha, log_delta = theta
+
+    T3 = ((3 / 4 * T_int ** 4 * (0.1 + 2 / 3)) ** (1 / 4)) * (1 - T3)
+    T2 = T3 * (1 - T2)
+    T1 = T2 * (1 - T1)
+    delta = (1e6 * 10 ** (-3 + 5 * log_delta)) ** (-alpha)
+
+    return models.PT_ret_model(
+        np.array([T1, T2, T3]),
+        delta,
+        alpha,
+        T_int,
+        pressures,
+        FeH,
+        CO,
+    )
