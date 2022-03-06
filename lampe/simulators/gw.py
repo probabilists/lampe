@@ -39,10 +39,8 @@ try:
     from pycbc.psd import welch
     from pycbc.waveform import get_fd_waveform
 except Exception as e:
-    print(
-        f"ImportWarning: {e}. 'GW' requires",
-        "  pip install gwpy pycbc",
-    )
+    print(f"ImportWarning: {e}. 'GW' requires")
+    print("  pip install gwpy pycbc")
 
 from numpy import ndarray as Array
 from torch import Tensor, BoolTensor
