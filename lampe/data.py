@@ -86,26 +86,28 @@ class H5Loader(data.Dataset):
         self,
         *filenames,
         batch_size: int = 2**10,  # 1024
-        group_by: str = 2**4,  # 16
+        chunk_size: int = 2**12,  # 4096
+        group_size: str = 2**4,  # 16
         pin_memory: bool = False,
         shuffle: bool = True,
         seed: int = None,
     ):
         super().__init__()
 
-        self.fs = [h5py.File(f, 'r') for f in filenames]
-        self.chunks = list({
-            (i, s.start, s.stop)
-            for i, f in enumerate(self.fs)
-            for s, *_ in f['x'].iter_chunks()
-        })
+        self.fs = list(map(h5py.File, filenames))
 
         self.batch_size = batch_size
-        self.group_by = group_by
+        self.chunk_size = chunk_size
+        self.group_size = group_size
+
         self.pin_memory = pin_memory
 
         self.shuffle = shuffle
         self.rng = np.random.default_rng(seed)
+
+    def __del__(self) -> None:
+        for f in self.fs:
+            f.close()
 
     def __len__(self) -> int:
         return sum(len(f['x']) for f in self.fs)
@@ -128,15 +130,21 @@ class H5Loader(data.Dataset):
         return theta, x
 
     def __iter__(self) -> Iterator[Tuple[Tensor, Tensor]]:
-        if self.shuffle:
-            self.rng.shuffle(self.chunks)
+        chunks = [
+            (i, j, j + self.chunk_size)
+            for i, f in enumerate(self.fs)
+            for j in range(0, len(f['x']), self.chunk_size)
+        ]
 
-        for i in range(0, len(self.chunks), self.group_by):
-            slices = sorted(self.chunks[i:i + self.group_by])
+        if self.shuffle:
+            self.rng.shuffle(chunks)
+
+        for l in range(0, len(chunks), self.group_size):
+            slices = sorted(chunks[l:l+self.group_size])
 
             # Load
-            theta = np.concatenate([self.fs[j]['theta'][k:l] for j, k, l in slices])
-            x = np.concatenate([self.fs[j]['x'][k:l] for j, k, l in slices])
+            theta = np.concatenate([self.fs[i]['theta'][j:k] for i, j, k in slices])
+            x = np.concatenate([self.fs[i]['x'][j:k] for i, j, k in slices])
 
             # Shuffle
             if self.shuffle:
@@ -160,7 +168,6 @@ def h5save(
     iterable: Iterable[Tuple[ArrayLike, ArrayLike]],
     filename: str,
     size: int,
-    chunk_size: int = 2**12,  # 4096
     dtype: type = np.float32,
     **kwargs,
 ) -> None:
@@ -179,21 +186,8 @@ def h5save(
         theta, x = map(np.asarray, next(iter(iterable)))
         theta, x = theta[0], x[0]
 
-        f.create_dataset(
-            'theta',
-            (size,) + theta.shape,
-            chunks=(chunk_size,) + theta.shape,
-            dtype=dtype,
-            maxshape=(None,) + theta.shape,
-        )
-
-        f.create_dataset(
-            'x',
-            (size,) + x.shape,
-            chunks=(chunk_size,) + x.shape,
-            dtype=dtype,
-            maxshape=(None,) + x.shape,
-        )
+        f.create_dataset('theta', (size,) + theta.shape, dtype=dtype)
+        f.create_dataset('x', (size,) + x.shape, dtype=dtype)
 
         ## Samples
         with tqdm(total=size, unit='sample') as tq:
