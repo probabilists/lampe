@@ -1,96 +1,105 @@
-r"""Masking helpers"""
+r"""Masking helpers."""
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from torch import Tensor, BoolTensor, LongTensor
-from torch.distributions import Distribution
+from torch import Tensor, BoolTensor
+from torch.distributions import *
 from typing import *
 
 
-class MaskDistribution(Distribution):
-    r"""Abstract mask distribution"""
+def mask2str(b: BoolTensor) -> str:
+    r"""Represents a binary mask as a string.
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    Arguments:
+        b: A binary mask :math:`b`, with shape :math:`(D,)`.
 
-        self.dummy = torch.tensor(0.)
+    Example:
+        >>> b = torch.tensor([True, True, False, True, False])
+        >>> mask2str(b)
+        '11010'
+    """
 
-    @property
-    def device(self) -> torch.device:
-        return self.dummy.device
+    return ''.join('1' if bit else '0' for bit in b)
+
+
+def str2mask(string: str) -> BoolTensor:
+    r"""Parses the string representation of a binary mask into a tensor.
+
+    Arguments:
+        string: A binary mask string representation.
+
+    Example:
+        >>> str2mask('11010')
+        tensor([True, True, False, True, False])
+    """
+
+    return torch.tensor([char == '1' for char in string])
+
+
+class BernoulliMask(Independent):
+    r"""Creates a distribution :math:`P(b)` over all binary masks :math:`b` in the
+    hypercube :math:`\{0, 1\}^D` such that each bit :math:`b_i` has a probability
+    :math:`p` of being positive.
+
+    .. math:: P(b) = \prod^D_{i = 1} p^{b_i} (1 - p)^{1 - b_i}
+
+    Arguments:
+        dim: The hypercube dimensionality :math:`D`.
+        p: The probability :math:`p` of a bit to be positive.
+
+    Example:
+        >>> d = BernoulliMask(5, 0.5)
+        >>> d.sample()
+        tensor([True, True, False, True, False])
+    """
+
+    has_rsample = False
+
+    def __init__(self, dim: int, p: float = 0.5):
+        super().__init__(Bernoulli(torch.ones(dim) * p), 1)
+
+    def log_prob(b: BoolTensor) -> Tensor:
+        return super().log_prob(b.float())
+
+    def sample(self, shape: torch.Size = ()) -> BoolTensor:
+        return super().sample(shape).bool()
 
 
 class SelectionMask(Distribution):
-    r"""Samples uniformly from a selection of masks"""
+    r"""Creates a mask distribution :math:`P(b)`, uniform over a selection of
+    binary masks :math:`\mathcal{B} \subseteq \{0, 1\}^D`.
+
+    .. math:: P(b) = \begin{cases}
+            \frac{1}{|\mathcal{B}|} & \text{if } b \in \mathcal{B} \\
+            0 & \text{otherwise}
+        \end{cases}
+
+    Arguments:
+        selection: A binary mask selection :math:`\mathcal{B}`.
+
+    Example:
+        >>> selection = torch.tensor([
+        ...     [True, False, False],
+        ...     [False, True, False],
+        ...     [False, False, True],
+        ... ])
+        >>> d = SelectionMask(selection)
+        >>> d.sample()
+        tensor([False, True, False])
+    """
 
     def __init__(self, selection: BoolTensor):
         super().__init__(event_shape=selection.shape[-1:])
 
         self.selection = selection
 
-    def rsample(self, shape: torch.Size = ()) -> BoolTensor:
-        r""" a ~ p(a) """
+    def log_prob(b: BoolTensor) -> Tensor:
+        match = torch.all(b[..., None, :] == self.selection, dim=-1)
+        prob = match.float().mean(dim=-1)
+        return prob.log()
 
-        indices = torch.randint(len(self.selection), shape, device=self.device)
-        return self.selection[indices]
-
-
-class UniformMask(MaskDistribution):
-    r"""Samples uniformly among all masks of size `size`"""
-
-    def __init__(self, size: int):
-        super().__init__(event_shape=(size,))
-
-        self.size = size
-
-    def rsample(self, shape: torch.Size = ()) -> BoolTensor:
-        r""" a ~ p(a) """
-
-        integers = torch.randint(1, 2 ** self.size, shape, device=self.device)
-        return bit_repr(integers, self.size)
-
-
-class PoissonMask(MaskDistribution):
-    r"""Samples among all masks of size `size`,
-    with the number of positive bits following a Poisson distribution"""
-
-    def __init__(self, size: int, lmbda: float = 1.):
-        super().__init__(event_shape=(size,))
-
-        self.size = size
-        self.lmbda = lmbda
-
-        self.rng = np.random.default_rng()
-
-    def rsample(self, shape: torch.Size = ()) -> BoolTensor:
-        r""" a ~ p(a) """
-
-        k = self.rng.poisson(self.lmbda, shape)
-        k = torch.from_numpy(k).to(self.device)
-
-        mask = torch.arange(self.size, device=self.device)
-        mask = mask <= k[..., None]
-
-        order = torch.rand(mask.shape, device=self.device)
-        order = torch.argsort(order, dim=-1)
-
-        return torch.gather(mask, dim=-1, index=order)
-
-
-def str2mask(string: str) -> BoolTensor:
-    return torch.tensor([char == '1' for char in string])
-
-
-def mask2str(mask: BoolTensor) -> str:
-    return ''.join('1' if bit else '0' for bit in mask)
-
-
-def bit_repr(integers: LongTensor, bits: int) -> BoolTensor:
-    r"""Bit representation of integers"""
-
-    powers = 2 ** torch.arange(bits).to(integers)
-    bits = integers[..., None].bitwise_and(powers) != 0
-
-    return bits
+    def sample(self, shape: torch.Size = ()) -> BoolTensor:
+        index = torch.randint(len(self.selection), shape, device=self.device)
+        return self.selection[index]

@@ -1,4 +1,4 @@
-r"""Simulators"""
+r"""Simulators and benchmarks."""
 
 from abc import ABC, abstractmethod
 from numpy import ndarray as Array
@@ -7,9 +7,8 @@ from typing import *
 
 
 class Simulator(ABC):
-    r"""Abstract simulator class"""
+    r"""Abstract simulator class."""
 
     @abstractmethod
     def __call__(self, theta: Union[Array, Tensor]) -> Union[Array, Tensor]:
-        r""" x ~ p(x | theta) """
         pass

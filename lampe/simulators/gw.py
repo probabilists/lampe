@@ -1,27 +1,24 @@
-r"""Gravitational Waves (GW)
+r"""Gravitational waves (GW) benchmark.
 
-GW computes the gravitational waves emitted by precessing quasi-circular
+The GW simulator computes the gravitational waves emitted by precessing quasi-circular
 binary black hole (BBH) systems, and project them onto LIGO detectors (H1 and L1).
-
-The simulator assumes stationary Gaussian noise with respect to the
-noise spectral density (NSD) estimated from 1024 seconds of detector data
-prior to GW150914 [1].
-
-Following [2], the waveforms are compressed to a reduced-order basis corresponding
-to the first 128 components of a singular value decomposition (SVD).
+It assumes stationary Gaussian noise with respect to the detectors' noise spectral
+densities, estimated from 1024 seconds of detector data prior to GW150914. The
+waveforms are compressed to a reduced-order basis corresponding to the first 128
+components of a singular value decomposition (SVD).
 
 References:
-    [1] Observation of Gravitational Waves from a Binary Black Hole Merger
+    Observation of Gravitational Waves from a Binary Black Hole Merger
     (Abbott et al., 2016)
     https://arxiv.org/abs/1602.03837
 
-    [2] Complete parameter inference for GW150914 using deep learning
+    Complete parameter inference for GW150914 using deep learning
     (Green et al., 2021)
     https://arxiv.org/abs/2008.03312
 
 Shapes:
-    theta: (15,)
-    x: (2, 256)
+    theta: :math:`(15,)`.
+    x: :math:`(2, 256)`.
 """
 
 import numpy as np
@@ -52,16 +49,17 @@ from ..priors import (
     Distribution,
     Joint,
     Uniform,
-    CosineUniform,
-    SineUniform,
     Sort,
     Maximum,
     Minimum,
+    TransformedUniform,
+    CosTransform,
+    SinTransform,
 )
 from ..utils import cache, vectorize
 
 
-labels = [
+LABELS = [
     f'${l}$' for l in [
         'm_1', 'm_2', r'\phi_c', 't_c', 'd_L',
         'a_1', 'a_2', r'\theta_1', r'\theta_2', r'\phi_{12}', r'\phi_{JL}',
@@ -69,8 +67,7 @@ labels = [
     ]
 ]
 
-
-bounds = torch.tensor([
+LOWER, UPPER = torch.tensor([
     [10., 80.],               # primary mass [solar masses]
     [10., 80.],               # secondary mass [solar masses]
     [0., 2 * np.pi],          # coalesence phase [rad]
@@ -86,49 +83,56 @@ bounds = torch.tensor([
     [0., np.pi],              # polarization [rad]
     [0., 2 * np.pi],          # right ascension [rad]
     [-np.pi / 2, np.pi / 2],  # declination [rad]
-])
-
-lower, upper = bounds[:, 0], bounds[:, 1]
+]).t()
 
 
-def gw_prior(mask: BoolTensor = None) -> Distribution:
-    r""" p(theta) """
+def build_prior(b: BoolTensor = None) -> Distribution:
+    r"""Returns a prior distribution :math:`p(\theta)` for BBH systems.
 
-    if mask is None:
-        mask = [True] * 15
+    Arguments:
+        b: An optional binary mask :math:`b`, with shape :math:`(D,)`.
+    """
+
+    if b is None:
+        b = [True] * 15
 
     marginals = []
 
-    if mask[0] or mask[1]:
-        base = Uniform(lower[0], upper[0])
+    if b[0] or b[1]:
+        base = Uniform(LOWER[0], UPPER[0])
 
-        if mask[0] and mask[1]:
+        if b[0] and b[1]:
             law = Sort(base, n=2, descending=True)
-        elif mask[0]:
+        elif b[0]:
             law = Maximum(base, n=2)
-        elif mask[1]:
+        elif b[1]:
             law = Minimum(base, n=2)
 
         marginals.append(law)
 
-    for i, b in enumerate(mask[2:], start=2):
-        if not b:
-            continue
+    for i in range(2, len(b)):
+        if b[i]:
+            if i in [7, 8, 11]:  # [tilt_1, tilt_2, theta_jn]
+                m = TransformedUniform(LOWER[i], UPPER[i], CosTransform())
+            elif i == 14:  # declination
+                m = TransformedUniform(LOWER[i], UPPER[i], SinTransform())
+            else:
+                m = Uniform(LOWER[i], UPPER[i])
 
-        if i in [7, 8, 11]:  # [tilt_1, tilt_2, theta_jn]
-            m = CosineUniform(lower[i], upper[i])
-        elif i == 14:  # declination
-            m = SineUniform(lower[i], upper[i])
-        else:
-            m = Uniform(lower[i], upper[i])
-
-        marginals.append(m)
+            marginals.append(m)
 
     return Joint(marginals)
 
 
 class GW(Simulator):
-    r"""Gravitational Waves (GW) simulator"""
+    r"""Creates a gravitational waves (GW) simulator.
+
+    Arguments:
+        reduced_basis: Whether waveform are compressed to a reduced basis or not.
+        noisy: Whether noise is added to waveforms or not.
+        seed: A random number generator seed.
+        kwargs: Simulator settings and constants (e.g. event, approximant, ...).
+    """
 
     def __init__(
         self,
@@ -171,8 +175,6 @@ class GW(Simulator):
         self.rng = np.random.default_rng(seed)
 
     def __call__(self, theta: Array) -> Array:
-        r""" x ~ p(x | theta) """
-
         x = gravitational_waveform(theta, **self.constants)
         x = self.process(x)
 
@@ -182,7 +184,7 @@ class GW(Simulator):
         return x
 
     def process(self, x: Array) -> Array:
-        r"""Processes waveforms into network-friendly inputs"""
+        r"""Processes waveforms into network-friendly inputs."""
 
         x = crop_dft(x, **self.constants)
         x = x / self.nsd
@@ -195,14 +197,14 @@ class GW(Simulator):
 
 @cache
 def ligo_detector(name: str):
-    r"""Fetches LIGO detector"""
+    r"""Fetches LIGO detector."""
 
     return Detector(name)
 
 
 @cache
 def event_gps(event: str = 'GW150914') -> float:
-    r"""Fetches event's GPS time"""
+    r"""Fetches event's GPS time."""
 
     return Merger(event).data['GPS']
 
@@ -213,7 +215,7 @@ def tukey_window(
     sample_rate: float,  # Hz
     roll_off: float = 0.4,  # s
 ) -> Array:
-    r"""Tukey window function
+    r"""Returns a tukey window.
 
     References:
         https://en.wikipedia.org/wiki/Window_function
@@ -227,7 +229,7 @@ def tukey_window(
     return tukey(length, alpha)
 
 
-@cache(disk=True)
+@cache(persist=True)
 def event_nsd(
     event: str,
     detectors: Tuple[str, ...],
@@ -235,7 +237,7 @@ def event_nsd(
     segment: float,  # s
     **absorb,
 ) -> Array:
-    r"""Fetches event's Noise Spectral Density (NSD)
+    r"""Fetches event's noise spectral density (NSD).
 
     Wikipedia:
         https://en.wikipedia.org/wiki/Noise_spectral_density
@@ -261,7 +263,7 @@ def event_nsd(
     return np.stack(nsds)
 
 
-@cache(disk=True)
+@cache(persist=True)
 def event_dft(
     event: str,
     detectors: Tuple[str, ...],
@@ -269,7 +271,7 @@ def event_dft(
     buffer: float,  # s
     **absorb,
 ) -> Array:
-    r"""Fetches event's Discrete Fourier Transform (DFT)"""
+    r"""Fetches event's discrete fourier transform (DFT)."""
 
     time = event_gps(event) + buffer
 
@@ -288,16 +290,14 @@ def event_dft(
 
 @vectorize(otypes=[float] * 7)
 def lal_spins(*args) -> Tuple[float, ...]:
-    r"""Converts LALInference geometric parameters to LALSimulation spins"""
+    r"""Converts LALInference geometric parameters to LALSimulation spins."""
 
     return tuple(SimInspiralTransformPrecessingNewInitialConditions(*args))
 
 
 @vectorize(otypes=[Array, Array])
 def plus_cross(**kwargs) -> Tuple[Array, Array]:
-    r"""Simulates frequency-domain plus and cross polarizations
-    of gravitational wave
-    """
+    r"""Simulates frequency-domain plus and cross polarizations of gravitational wave."""
 
     hp, hc = get_fd_waveform(**kwargs)
     return hp.numpy(), hc.numpy()
@@ -314,12 +314,15 @@ def gravitational_waveform(
     f_lower: float,  # Hz
     **absorb,
 ) -> Array:
-    r"""Simulates a frequency-domain gravitational wave projected onto LIGO detectors
+    r"""Simulates a frequency-domain gravitational wave projected onto LIGO detectors.
 
     References:
         http://pycbc.org/pycbc/latest/html/waveform.html
         http://pycbc.org/pycbc/latest/html/detector.html
     """
+
+    shape = theta.shape[:-1]
+    theta = theta.reshape(-1, theta.shape[-1])
 
     # Parameters
     m_1, m_2, phi_c, t_c, d_L, a_1, a_2, tilt_1, tilt_2, phi_12, phi_jl, theta_jn, psi, alpha, delta = [
@@ -357,7 +360,8 @@ def gravitational_waveform(
 
     # Projection on detectors
     time = event_gps(event)
-    angular_speeds = -1j * 2 * np.pi * np.arange(hp.shape[-1]) / duration
+    length = int(duration * sample_rate / 2) + 1
+    angular_speeds = -1j * 2 * np.pi * np.arange(length) / duration
 
     strains = []
 
@@ -374,7 +378,10 @@ def gravitational_waveform(
 
         strains.append(s)
 
-    return np.stack(strains, axis=-2)
+    strains = np.stack(strains, axis=-2)
+    strains = strains.reshape(shape + strains.shape[1:])
+
+    return strains
 
 
 def crop_dft(
@@ -384,12 +391,12 @@ def crop_dft(
     f_lower: float,  # Hz
     **absorb,
 ) -> Array:
-    r"""Crops low and high frequencies of Discrete Fourier Transform (DFT)"""
+    r"""Crops low and high frequencies of discrete fourier transform (DFT)."""
 
     return dft[..., int(duration * f_lower):int(duration * sample_rate / 2) + 1]
 
 
-@cache(disk=True)
+@cache(persist=True)
 def svd_basis(
     n_components: int = 2**7,  # 128
     n_samples: int = 2**15,  # 32768
@@ -397,7 +404,7 @@ def svd_basis(
     seed: int = 0,
     **kwargs,
 ) -> Array:
-    r"""Builds Singular Value Decompostition (SVD) basis"""
+    r"""Builds Singular Value Decompostition (SVD) basis."""
 
     prior = gw_prior()
     simulator = GW(reduced_basis=False, noisy=False, **kwargs)
@@ -408,7 +415,7 @@ def svd_basis(
 
     for _ in tqdm(range(n_samples // batch_size), unit='sample', unit_scale=batch_size):
         theta = prior.sample((batch_size,))
-        theta[..., 4] = lower[4]  # fixed luminosity distance
+        theta[..., 4] = LOWER[4]  # fixed luminosity distance
         theta = theta.numpy().astype(np.float64)
 
         xs.append(simulator(theta))

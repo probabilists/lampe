@@ -1,4 +1,11 @@
-r"""Flows and parametric distributions"""
+r"""Flows and parametric distributions.
+
+.. admonition:: TODO
+
+    * Finish documentation.
+    * Drop :mod:`nflows`.
+    * Find references.
+"""
 
 import nflows.distributions as D
 import nflows.transforms as T
@@ -12,13 +19,13 @@ from typing import *
 
 
 class NormalizingFlow(Flow):
-    r"""Normalizing Flow
+    r"""Creates a normalizing flow :math:`p_\phi(x | y)`.
 
-    (x, y) -> log p(x | y)
+    TODO
 
-    Args:
-        base: The base distribution.
-        transforms: A list of (learnable) conditional transforms.
+    Arguments:
+        base: A base distribution.
+        transforms: A list of parametric conditional transforms.
     """
 
     def __init__(self, base: D.Distribution, transforms: List[T.Transform]):
@@ -28,7 +35,7 @@ class NormalizingFlow(Flow):
         )
 
     def log_prob(self, x: Tensor, y: Tensor) -> Tensor:
-        r""" log p(x | y) """
+        r"""Returns the log-density :math:`\log p_\phi(x | y)`."""
 
         return super().log_prob(
             x.reshape(-1, x.shape[-1]),
@@ -40,7 +47,7 @@ class NormalizingFlow(Flow):
         return self.rsample(y, shape)
 
     def rsample(self, y: Tensor, shape: torch.Size = ()) -> Tensor:
-        r""" x ~ p(x | y) """
+        r"""Samples from the conditional distribution :math:`p_\phi(x | y)`."""
 
         size = torch.Size(shape).numel()
 
@@ -51,19 +58,22 @@ class NormalizingFlow(Flow):
 
 
 class MAF(NormalizingFlow):
-    r"""Masked Autoregressive Flow (MAF)
+    r"""Creates a masked autoregressive flow (MAF).
 
-    Args:
+    TODO
+
+    References:
+        Masked Autoregressive Flow for Density Estimation
+        (Papamakarios et al., 2017)
+        https://arxiv.org/abs/1705.07057
+
+    Arguments:
         x_size: The input size.
         y_size: The context size.
         arch: The flow architecture.
         num_transforms: The number of transforms.
         moments: The input moments (mu, sigma) for standardization.
-
-    References:
-        [1] Masked Autoregressive Flow for Density Estimation
-        (Papamakarios et al., 2017)
-        https://arxiv.org/abs/1705.07057
+        kwargs: Keyword arguments passed to the transform.
     """
 
     def __init__(

@@ -1,51 +1,82 @@
-r"""Plotting routines"""
+r"""Plotting helpers.
+
+.. admonition:: TODO
+
+    * Generate plots.
+"""
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.ndimage as si
 
 from numpy import ndarray as Array
-from numpy.typing import ArrayLike
 from typing import *
 
 
-plt.rcParams.update({
-    'axes.axisbelow': True,
-    'axes.linewidth': .8,
-    'figure.autolayout': True,
-    'figure.dpi': 150,
-    'figure.figsize': (6.4, 4.8),
-    'font.size': 12.,
-    'legend.fontsize': 'x-small',
-    'lines.linewidth': 1.,
-    'lines.markersize': 3.,
-    'savefig.bbox': 'tight',
-    'savefig.transparent': True,
-    'xtick.labelsize': 'x-small',
-    'xtick.major.width': .8,
-    'ytick.labelsize': 'x-small',
-    'ytick.major.width': .8,
-})
+__all__ = ['nice_rc', 'corner', 'rank_ecdf']
 
-if mpl.checkdep_usetex(True):
-    plt.rcParams.update({
-        'font.family': ['serif'],
-        'font.serif': ['Computer Modern'],
-        'text.usetex': True,
-    })
+
+def nice_rc(latex: bool = True) -> Dict[str, Any]:
+    r"""Returns a dictionary of runtime configuration (rc) settings for nicer
+    :mod:`matplotlib` plots. The settings include 12pt font size, higher DPI,
+    tight layout, transparent background, etc.
+
+    Arguments:
+        latex: Whether to use LaTeX typesetting or not.
+
+    Example:
+        >>> plt.rcParams.update(nice_rc())
+        >>> x = np.arange(5)
+        >>> plt.plot(x, np.sqrt(x))
+        >>> plt.xlabel(r'$x$')
+        >>> plt.ylabel(r'$f(x)$')
+        TODO
+    """
+
+    rc = {
+        'axes.axisbelow': True,
+        'axes.linewidth': .8,
+        'figure.autolayout': True,
+        'figure.dpi': 150,
+        'figure.figsize': (6.4, 4.8),
+        'font.size': 12.,
+        'legend.fontsize': 'x-small',
+        'lines.linewidth': 1.,
+        'lines.markersize': 3.,
+        'savefig.bbox': 'tight',
+        'savefig.transparent': True,
+        'xtick.labelsize': 'x-small',
+        'xtick.major.width': .8,
+        'ytick.labelsize': 'x-small',
+        'ytick.major.width': .8,
+    }
+
+    if mpl.checkdep_usetex(latex):
+        rc.update({
+            'font.family': ['serif'],
+            'font.serif': ['Computer Modern'],
+            'text.usetex': True,
+        })
+
+    return rc
 
 
 class LinearAlphaColormap(mpl.colors.LinearSegmentedColormap):
-    r"""Linear transparency colormap segmented between levels"""
+    r"""Linear segmented transparency colormap.
+
+    Arguments:
+        color: A color.
+        levels: A sequence of levels dividing the domain into segments.
+        alpha: The transparancy range.
+        name: A name for the colormap.
+    """
 
     def __new__(
         self,
         color: Union[str, tuple],
-        levels: ArrayLike = None,
+        levels: Array = None,
         alpha: Tuple[float, float] = (0., 1.),
         name: str = None,
-        **kwargs,
     ):
         if name is None:
             if type(color) is str:
@@ -73,31 +104,91 @@ class LinearAlphaColormap(mpl.colors.LinearSegmentedColormap):
         )
 
 
-def credible_levels(hist: Array, quantiles: Array) -> Array:
-    r"""Retrieve credible region boundary levels from an histogram"""
+def gaussian_blur(img: Array, sigma: float = 1.) -> Array:
+    r"""Applies a Gaussian blur to an image.
+
+    Arguments:
+        img: An image array.
+        sigma: The standard deviation of the Gaussian kernel.
+
+    Returns:
+        The blurred image.
+
+    Example:
+        >>> img = np.random.rand(128, 128)
+        >>> gaussian_blur(img, sigma=2.)
+        array([...])
+    """
+
+    size = 2 * int(3 * sigma) + 1
+
+    k = np.arange(size) - size / 2
+    k = np.exp(-k ** 2 / (2 * sigma ** 2))
+    k = k / np.sum(k)
+
+    smooth = lambda x: np.convolve(x, k, mode='same')
+
+    for i in range(len(img.shape)):
+        img = np.apply_along_axis(smooth, i, img)
+
+    return img
+
+
+def credible_levels(hist: Array, creds: Array) -> Array:
+    r"""Returns the levels of credibility region contours.
+
+    Arguments:
+        hist: An histogram.
+        creds: The region credibilities.
+    """
 
     x = np.sort(hist, axis=None)[::-1]
     cdf = np.cumsum(x)
-    idx = np.searchsorted(cdf, quantiles * cdf[-1])
+    idx = np.searchsorted(cdf, creds * cdf[-1])
 
     return x[idx]
 
 
 def corner(
-    data: ArrayLike,  # table or matrix of 1d/2d histograms
+    data: Array,
     bins: Union[int, List[int]] = 100,
-    bounds: Tuple[ArrayLike, ArrayLike] = None,
-    quantiles: ArrayLike = [.6827, .9545, .9973],
+    bounds: Tuple[Array, Array] = None,
+    creds: Array = [.6827, .9545, .9973],
     color: Union[str, tuple] = None,
-    alpha: float = .5,
+    alpha: Tuple[float, float] = (0., .5),
     legend: str = None,
     labels: List[str] = None,
-    markers: List[ArrayLike] = [],
+    markers: List[Array] = [],
     smooth: float = 0,
     figure: mpl.figure.Figure = None,
     **kwargs,
 ) -> mpl.figure.Figure:
-    r"""Corner plot"""
+    r"""Displays each 1 or 2-d projection of multi-dimensional data, as a triangular
+    matrix of histograms, known as corner plot. For 2-d histograms, highest density
+    credibility regions are delimited.
+
+    Arguments:
+        data: Multi-dimensional data, either as a table or as a matrix of histograms.
+        bins: The number(s) of bins per dimension.
+        bounds: A tuple of lower and upper domain bounds. If :py:`None`, inferred from data.
+        creds: The region credibilities (in :math:`[0, 1]`) to delimit.
+        color: A color for histograms.
+        alpha: A transparency range.
+        legend: A legend.
+        labels: The dimension labels.
+        markers: A list of points to mark on the histograms.
+        smooth: The standard deviation of the smoothing kernels.
+        figure: A corner plot over which to draw the new one.
+        kwargs: Keyword arguments passed to :func:`matplotlib.pyplot.subplots`.
+
+    Returns:
+        The figure instance for the corner plot.
+
+    Example:
+        >>> data = np.random.randn(2**16, 4)
+        >>> corner(data, bins=42)
+        TODO
+    """
 
     # Histograms
     data = np.asarray(data)
@@ -177,17 +268,17 @@ def corner(
     handles, texts = axes[0, -1].get_legend_handles_labels()
 
     ## Quantiles
-    quantiles = np.sort(np.asarray(quantiles))[::-1]
-    quantiles = np.append(quantiles, 0)
+    creds = np.sort(np.asarray(creds))[::-1]
+    creds = np.append(creds, 0)
 
-    cmap = LinearAlphaColormap('black', levels=quantiles, alpha=(0, alpha))
+    cmap = LinearAlphaColormap('black', levels=creds, alpha=alpha)
 
-    levels = (quantiles[1:] + quantiles[:-1]) / 2
-    levels = (levels - quantiles.min()) / (quantiles.max() - quantiles.min())
+    levels = (creds - creds.min()) / (creds.max() - creds.min())
+    levels = (levels[:-1] + levels[1:]) / 2
 
-    for q, l in zip(quantiles[:-1], levels):
+    for c, l in zip(creds[:-1], levels):
         handles.append(mpl.patches.Patch(color=cmap(l), linewidth=0))
-        texts.append(r'{:.1f}\,\%'.format(q * 100))
+        texts.append(r'{:.1f}\,\%'.format(c * 100))
 
     ## Update
     if not new:
@@ -209,7 +300,7 @@ def corner(
                 continue
 
             if smooth > 0:
-                hist = si.gaussian_filter(hist, smooth)
+                hist = gaussian_blur(hist, smooth)
 
             ## Draw
             x, y = bins[j], bins[i]
@@ -226,12 +317,12 @@ def corner(
                 ax.set_xlim(left=bins[i][0], right=bins[i][-1])
                 ax.set_ylim(bottom=bottom, top=top)
             else:
-                levels = np.unique(credible_levels(hist, quantiles))
+                levels = np.unique(credible_levels(hist, creds))
 
                 cf = ax.contourf(
                     x, y, hist,
                     levels=levels,
-                    cmap=LinearAlphaColormap(color, levels, alpha=(0, alpha)),
+                    cmap=LinearAlphaColormap(color, levels, alpha=alpha),
                 )
                 ax.contour(cf, colors=color)
 
@@ -298,14 +389,31 @@ def corner(
     return figure
 
 
-def pp(
-    p: ArrayLike,
+def rank_ecdf(
+    ranks: Array,
     color: Union[str, tuple] = None,
-    label: str = None,
+    legend: str = None,
     figure: mpl.figure.Figure = None,
     **kwargs,
 ) -> mpl.figure.Figure:
-    r"""P-P plot"""
+    r"""Draws the empirical cumulative distribution function (ECDF) of a rank
+    statistic :math:`r \in [0, 1]`.
+
+    Arguments:
+        ranks: Samples of the rank statistic.
+        color: A color.
+        legend: A legend.
+        figure: A ECDF plot over which to draw the new one.
+        kwargs: Keyword arguments passed to :func:`matplotlib.pyplot.subplots`.
+
+    Returns:
+        The figure instance for the ECDF plot.
+
+    Example:
+        >>> ranks = np.random.rand(2**12)**2
+        >>> rank_ecdf(ranks)
+        TODO
+    """
 
     # Figure
     if figure is None:
@@ -317,22 +425,22 @@ def pp(
         ax = figure.axes.squeeze()
         new = False
 
-    # CDF
-    p = np.sort(np.asarray(p))
-    p = np.hstack([0, p, 1])
-    cdf = np.linspace(0, 1, len(p))
+    # ECDF
+    ranks = np.sort(np.asarray(ranks))
+    ranks = np.hstack([0, ranks, 1])
+    ecdf = np.linspace(0, 1, len(ranks))
 
     # Plot
     if new:
         ax.plot([0, 1], [0, 1], color='k', linestyle='--')
 
-    ax.plot(p, cdf, color=color, label=label)
+    ax.plot(p, cdf, color=color, label=legend)
 
     ax.grid()
-    ax.set_xlabel(r'$p$')
-    ax.set_ylabel(r'CDF$(p)$')
+    ax.set_xlabel(r'$r$')
+    ax.set_ylabel(r'$\text{ECDF}(r)$')
 
-    if label is not None:
+    if legend is not None:
         ax.legend(loc='upper left')
 
     return figure

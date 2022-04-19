@@ -1,16 +1,16 @@
-r"""Exoplanet Emission Spectrum (EES)
+r"""Exoplanet emission spectrum (EES) benchmark.
 
-EES computes an emission spectrum based on disequilibrium carbon chemistry,
+The simulator computes an emission spectrum based on disequilibrium carbon chemistry,
 equilibrium clouds and a spline temperature-pressure profile of the exoplanet atmosphere.
 
 References:
-    [1] Retrieving scattering clouds and disequilibrium chemistry in the atmosphere of HR 8799e
+    Retrieving scattering clouds and disequilibrium chemistry in the atmosphere of HR 8799e
     (Mollière et al., 2020)
     https://arxiv.org/abs/2006.09394
 
 Shapes:
-    theta: (16,)
-    x: (947,)
+    theta: :math:`(16,)`.
+    x: :math:`(947,)`.
 """
 
 import numpy as np
@@ -33,11 +33,10 @@ from torch import Tensor, BoolTensor
 from typing import *
 
 from . import Simulator
-from ..priors import Distribution, JointUniform
 from ..utils import cache, vectorize
 
 
-labels = [
+LABELS = [
     f'${l}$' for l in [
         r'{\rm C/O}', r'\left[{\rm Fe/H}\right]', r'\log P_{\rm quench}',
         r'\log X_{\rm Fe}', r'\log X_{\rm MgSiO_3}',
@@ -47,8 +46,7 @@ labels = [
     ]
 ]
 
-
-bounds = torch.tensor([
+LOWER, UPPER = torch.tensor([
     [0.1, 1.6],     # C/O
     [-1.5, 1.5],    # [Fe/H]
     [-6., 3.],      # log P_quench
@@ -65,22 +63,17 @@ bounds = torch.tensor([
     [0., 1.],       # ∝ T_1 / T_2
     [1., 2.],       # alpha
     [0., 1.],       # ∝ log delta / alpha
-])
-
-lower, upper = bounds[:, 0], bounds[:, 1]
-
-
-def ees_prior(mask: BoolTensor = None) -> Distribution:
-    r""" p(theta) """
-
-    if mask is None:
-        mask = ...
-
-    return JointUniform(lower[mask], upper[mask])
+]).t()
 
 
 class EES(Simulator):
-    r"""Exoplanet Emission Spectrum (EES) simulator"""
+    r"""Creates an exoplanet emission spectrum (EES) simulator.
+
+    Arguments:
+        noisy: Whether noise is added to spectra or not.
+        seed: A random number generator seed.
+        kwargs: Simulator settings and constants (e.g. planet distance, pressures, ...).
+    """
 
     def __init__(self, noisy: bool = True, seed: int = None, **kwargs):
         super().__init__()
@@ -100,7 +93,7 @@ class EES(Simulator):
         }
         self.scale = self.constants.pop('scale')
 
-        self.atmosphere = cache(prt.Radtrans, disk=True)(
+        self.atmosphere = cache(prt.Radtrans, persist=True)(
             line_species=[
                 'H2O_HITEMP',
                 'CO_all_iso_HITEMP',
@@ -135,19 +128,7 @@ class EES(Simulator):
         self.rng = np.random.default_rng(seed)
 
     def __call__(self, theta: Array) -> Array:
-        r""" x ~ p(x | theta) """
-
-        theta = {
-            key: theta[..., i]
-            for i, key in enumerate([
-                'CO', 'FeH', 'log_pquench', 'log_X_Fe', 'log_X_MgSiO3', 'fsed', 'log_kzz',
-                'sigma_lnorm', 'log_g', 'R_pl', 'T_int', 'T3', 'T2', 'T1', 'alpha', 'log_delta',
-            ])
-        }
-        theta['R_pl'] = theta['R_pl'] * prt.nat_cst.r_jup_mean
-
-        x = emission_spectrum(self.atmosphere, **theta, **self.constants)
-        x = np.stack(x)
+        x = emission_spectrum(self.atmosphere, theta, **self.constants)
         x = self.process(x)
 
         if self.noisy:
@@ -156,32 +137,30 @@ class EES(Simulator):
         return x
 
     def process(self, x: Array) -> Array:
-        r"""Processes spectra into network-friendly inputs"""
+        r"""Processes spectra into network-friendly inputs."""
 
         return x * self.scale
 
 
-@vectorize(otypes=[Array])
 def emission_spectrum(
-    atmosphere: prt.Radtrans,
-    CO: float,
-    FeH: float,
-    log_X_Fe: float,
-    log_X_MgSiO3: float,
+    atmosphere,  #: prt.Radtrans
+    theta: Array,
     **kwargs,
 ) -> Array:
-    r"""Simulates emission spectrum
+    r"""Simulates the emission spectrum of an exoplanet.
 
     References:
         https://gitlab.com/mauricemolli/petitRADTRANS/-/blob/master/petitRADTRANS/retrieval/models.py#L41
     """
 
-    kwargs.update({
-        'C/O': CO,
-        'Fe/H': FeH,
-        'log_X_cb_Fe(c)': log_X_Fe,
-        'log_X_cb_MgSiO3(c)': log_X_MgSiO3,
-    })
+    names = [
+        'C/O', 'Fe/H', 'log_pquench', 'log_X_cb_Fe(c)', 'log_X_cb_MgSiO3(c)',
+        'fsed', 'log_kzz', 'sigma_lnorm', 'log_g', 'R_pl',
+        'T_int', 'T3', 'T2', 'T1', 'alpha', 'log_delta',
+    ]
+
+    kwargs.update(dict(zip(names, theta)))
+    kwargs['R_pl'] = kwargs['R_pl'] * prt.nat_cst.r_jup_mean
 
     parameters = {
         k: prm.Parameter(name=k, value=v, is_free_parameter=False)
@@ -189,12 +168,13 @@ def emission_spectrum(
     }
 
     _, spectrum = models.emission_model_diseq(atmosphere, parameters, AMR=True)
+
     return spectrum
 
 
 @vectorize(signature='(m),(n)->(n)')
 def pt_profile(theta: Array, pressures: Array) -> Array:
-    r"""Calculates the pressure-temperature profile
+    r"""Returns the pressure-temperature profile.
 
     References:
         https://gitlab.com/mauricemolli/petitRADTRANS/-/blob/master/petitRADTRANS/retrieval/models.py#L639

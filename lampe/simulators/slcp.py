@@ -1,52 +1,52 @@
-r"""Simple Likelihood Complex Posterior (SLCP)
+r"""Simple likelihood complex posterior (SLCP) benchmark.
 
-SLCP [1] is a toy simulator where theta parametrizes a 2-d multivariate Gaussian
-from which 4 points are independently drawn and stacked as a single observation x.
-
-It is a non-trivial parameter inference benchmark that allows to retrieve
-the ground-truth posterior through MCMC sampling of its tractable likelihood.
+SLCP is a toy simulator where :math:`\theta` parametrizes a 2-d multivariate Gaussian
+from which 4 points are independently drawn and stacked as a single observation :math:`x`.
+It is a non-trivial parameter inference benchmark that allows to retrieve the
+ground-truth posterior through MCMC sampling of its tractable likelihood.
 
 References:
-    [1] Sequential Neural Likelihood: Fast Likelihood-free Inference with Autoregressive Flows
+    Sequential Neural Likelihood: Fast Likelihood-free Inference with Autoregressive Flows
     (Papamakarios et al., 2019)
     https://arxiv.org/abs/1805.07226
 
 Shapes:
-    theta: (5,)
-    x: (4, 2)
+    theta: :math:`(5,)`.
+    x: :math:`(8,)`.
 """
 
 import torch
-import torch.nn as nn
 
 from torch import Tensor, BoolTensor
 from typing import *
 
 from . import Simulator
-from ..priors import Distribution, JointUniform, MultivariateNormal
+from ..priors import (
+    Distribution,
+    Independent,
+    MultivariateNormal,
+    ReshapeTransform,
+    TransformedDistribution,
+)
+from ..utils import broadcast
 
 
-labels = [f'$\\theta_{{{i + 1}}}$' for i in range(5)]
+LABELS = [f'$\\theta_{{{i + 1}}}$' for i in range(5)]
 
-
-lower = torch.full((5,), -3.)
-upper = torch.full((5,), 3.)
-
-
-def slcp_prior(mask: BoolTensor = None) -> Distribution:
-    r""" p(theta) """
-
-    if mask is None:
-        mask = ...
-
-    return JointUniform(lower[mask], upper[mask])
+LOWER, UPPER = torch.tensor([
+    [-3., 3.],  # theta_1
+    [-3., 3.],  # theta_2
+    [-3., 3.],  # theta_3
+    [-3., 3.],  # theta_4
+    [-3., 3.],  # theta_5
+]).t()
 
 
 class SLCP(Simulator):
-    r"""Simple Likelihood Complex Posterior (SLCP) simulator"""
+    r"""Creates a simple likelihood complex posterior (SLCP) simulator."""
 
     def likelihood(self, theta: Tensor, eps: float = 1e-8) -> Distribution:
-        r""" p(x | theta) """
+        r"""Returns the likelihood distribution :math:`p(x | \theta)`."""
 
         # Mean
         mu = theta[..., :2]
@@ -59,23 +59,23 @@ class SLCP(Simulator):
         cov = torch.stack([
             s1 ** 2, rho * s1 * s2,
             rho * s1 * s2, s2 ** 2,
-        ], dim=-1)
-
-        cov = cov.view(cov.shape[:-1] + (2, 2))
+        ], dim=-1).reshape(theta.shape[:-1] + (2, 2))
 
         # Repeat 4 times
         mu = mu.unsqueeze(-2).repeat_interleave(4, -2)
         cov = cov.unsqueeze(-3).repeat_interleave(4, -3)
 
-        # Normal
-        return MultivariateNormal(mu, cov)
+        # Normal distribution
+        normal = MultivariateNormal(mu, cov)
+
+        return TransformedDistribution(
+            Independent(normal, 1),
+            ReshapeTransform((4, 2), (8,)),
+        )
 
     def __call__(self, theta: Tensor) -> Tensor:
-        r""" x ~ p(x | theta) """
-
         return self.likelihood(theta).sample()
 
     def log_prob(self, theta: Tensor, x: Tensor) -> Tensor:
-        r""" log p(x | theta) """
-
-        return self.likelihood(theta).log_prob(x).sum(dim=-1)
+        theta, x = broadcast(theta, x, ignore=1)
+        return self.likelihood(theta).log_prob(x)

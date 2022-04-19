@@ -1,23 +1,22 @@
-r"""Hodgkin-Huxley (HH)
+r"""Hodgkin-Huxley (HH) benchmark.
 
-HH [1] is a widespread non-linear mechanistic model of neural dynamics.
+HH is a widespread non-linear mechanistic model of neural dynamics.
 
 References:
-    [1] A quantitative description of membrane current and its application to conduction and excitation in nerve
+    A quantitative description of membrane current and its application to conduction and excitation in nerve
     (Hodgkin et al., 1952)
     https://link.springer.com/article/10.1007/BF02459568
 
-    [2] Training deep neural density estimators to identify mechanistic models of neural dynamics
+    Training deep neural density estimators to identify mechanistic models of neural dynamics
     (Gonçalves et al., 2020)
     https://elifesciences.org/articles/56261
 
 Shapes:
-    theta: (8,)
-    x: (7,)
+    theta: :math:`(8,)`.
+    x: :math:`(7,)`.
 """
 
 import numpy as np
-import scipy.stats as ss
 import torch
 
 from numpy import ndarray as Array
@@ -25,18 +24,16 @@ from torch import Tensor, BoolTensor
 from typing import *
 
 from . import Simulator
-from ..priors import Distribution, JointUniform
 
 
-labels = [
+LABELS = [
     f'${l}$' for l in [
         r'g_{\mathrm{Na}}', r'g_{\mathrm{K}}', r'g_{\mathrm{M}}', 'g_l',
         r'\tau_{\max}', 'V_t', r'\sigma', 'E_l',
     ]
 ]
 
-
-bounds = torch.tensor([
+LOWER, UPPER = torch.tensor([
     [0.5, 80.],     # g_Na [mS/cm^2]
     [1e-4, 15.],    # g_K [mS/cm^2]
     [1e-4, .6],     # g_M [mS/cm^2]
@@ -45,22 +42,17 @@ bounds = torch.tensor([
     [-90., -40.],   # V_t [mV]
     [1e-4, .15],    # sigma [uA/cm^2]
     [-100., -35.],  # E_l [mV]
-])
-
-lower, upper = bounds[:, 0], bounds[:, 1]
-
-
-def hh_prior(mask: BoolTensor = None) -> Distribution:
-    r""" p(theta) """
-
-    if mask is None:
-        mask = ...
-
-    return JointUniform(lower[mask], upper[mask])
+]).t()
 
 
 class HH(Simulator):
-    r"""Hodgkin-Huxley (HH) simulator"""
+    r"""Creates an Hodgkin-Huxley (HH) simulator.
+
+    Arguments:
+        summary: Whether voltage traces are converted to summary statistics or not.
+        seed: A random number generator seed.
+        kwargs: Simulator settings and constants (e.g. duration, inital voltage, ...).
+    """
 
     def __init__(self, summary: bool = True, seed: int = None, **kwargs):
         super().__init__()
@@ -86,8 +78,6 @@ class HH(Simulator):
         self.rng = np.random.default_rng(seed)
 
     def __call__(self, theta: Array) -> Array:
-        r""" x ~ p(x | theta) """
-
         x = voltage_trace(theta, self.constants, self.rng)
 
         if self.summary:
@@ -101,7 +91,7 @@ def voltage_trace(
     constants: Dict[str, float],
     rng: np.random.Generator,
 ) -> Array:
-    r"""Simulates Hodgkin-Huxley voltage trace
+    r"""Simulates an Hodgkin-Huxley voltage trace.
 
     References:
         https://github.com/mackelab/sbi/blob/main/examples/HH_helper_functions.py
@@ -192,7 +182,7 @@ def voltage_trace(
 
 
 def summarize(x: Array, constants: Dict[str, float]) -> Array:
-    r"""Computes voltage trace summary statistics"""
+    r"""Returns summary statistics of a voltage trace."""
 
     # Constants
     T = constants['duration']
@@ -214,12 +204,15 @@ def summarize(x: Array, constants: Dict[str, float]) -> Array:
     # Moments
     x = x[..., (pad <= t) * (t < T - pad)]
     x_mean = np.mean(x, axis=-1)
-    x_var = np.var(x, axis=-1)
-    x_skew = ss.skew(x, axis=-1)
-    x_kurtosis = ss.kurtosis(x, axis=-1)
+    x_std = np.std(x, axis=-1)
+
+    z = (x - x_mean[..., None]) / x_std[..., None]
+
+    x_skew = np.mean(z**3, axis=-1)
+    x_kurtosis = np.mean(z**4, axis=-1)
 
     return np.stack([
         spikes,
         rest_mean, rest_std,
-        x_mean, x_var, x_skew, x_kurtosis,
+        x_mean, x_std, x_skew, x_kurtosis,
     ], axis=-1)

@@ -1,8 +1,7 @@
-r"""Priors and distributions"""
+r"""Priors and distributions."""
 
 import math
 import torch
-import torch.nn as nn
 
 from textwrap import indent
 from torch import Tensor
@@ -11,30 +10,75 @@ from torch.distributions.constraints import interval
 from torch.distributions.utils import broadcast_all
 from typing import *
 
-from .utils import deepapply
+
+class BoxUniform(Independent):
+    r"""Creates a distribution for a multivariate random variable :math:`X`
+    distributed uniformly over an hypercube domain. Formally,
+
+    .. math:: l_i \leq X_i < u_i ,
+
+    where :math:`l_i` and :math:`u_i` are respectively the lower and upper bounds
+    of the domain in the :math:`i`-th dimension.
+
+    Arguments:
+        lower: The lower bounds (inclusive).
+        upper: The upper bounds (exclusive).
+        ndims: The number of batch dimensions to interpret as event dimensions.
+
+    Example:
+        >>> d = BoxUniform(-torch.ones(3), torch.ones(3))
+        >>> d.event_shape
+        torch.Size([3])
+        >>> d.sample()
+        tensor([ 0.1859, -0.9698,  0.0665])
+    """
+
+    def __init__(self, lower: Tensor, upper: Tensor, ndims: int = 1):
+        super().__init__(Uniform(lower, upper), ndims)
+
+    def __repr__(self) -> str:
+        return f'Box{self.base_dist}'
 
 
-__init__ = Distribution.__init__
+class DiagNormal(Independent):
+    r"""Creates a multivariate normal distribution parametrized by the variables
+    mean :math:`\mu` and standard deviation :math:`\sigma`, but assumes no
+    correlation between the variables.
 
-def init(self, *args, **kwargs):
-    __init__(self, *args, **kwargs)
+    Arguments:
+        loc: The mean :math:`\mu` of the variables.
+        scale: The standard deviation :math:`\sigma` of the variables.
+        ndims: The number of batch dimensions to interpret as event dimensions.
 
-    self.__class__ = type(
-        self.__class__.__name__,
-        (self.__class__, nn.Module),
-        {},
-    )
+    Example:
+        >>> d = DiagNormal(torch.zeros(3), torch.ones(3))
+        >>> d.event_shape
+        torch.Size([3])
+        >>> d.sample()
+        tensor([0.7304, -0.1976, -1.7591])
+    """
 
-    nn.Module.__init__(self)
+    def __init__(self, loc: Tensor, scale: Tensor, ndims: int = 1):
+        super().__init__(Normal(loc, scale), ndims)
 
-Distribution.__init__ = init
-Distribution._apply = deepapply
-Distribution._validate_args = False
-Distribution.arg_constraints = {}
+    def __repr__(self) -> str:
+        return f'Diag{self.base_dist}'
 
 
 class Joint(Distribution):
-    r"""Joint distribution of independent random variables"""
+    r"""Joins independent random variables into a single distribution.
+
+    Arguments:
+        marginals: A list of independent distributions. The distributions
+            should not be batched.
+
+    Example:
+        >>> d = Joint([Uniform(0, 1), Normal(0, 1)])
+        >>> d.event_shape
+        torch.Size([2])
+        >>> d.sample()
+        tensor([ 0.8969, -2.6717])
+    """
 
     def __init__(self, marginals: List[Distribution]):
         super().__init__()
@@ -57,7 +101,7 @@ class Joint(Distribution):
 
         for dist in self.marginals:
             y = dist.rsample(shape)
-            y = y.view(shape + (-1,))
+            y = y.reshape(shape + (-1,))
             x.append(y)
 
         return torch.cat(x, dim=-1)
@@ -68,7 +112,7 @@ class Joint(Distribution):
 
         for dist in self.marginals:
             j = i + dist.event_shape.numel()
-            y = x[..., i:j].view(shape + dist.event_shape)
+            y = x[..., i:j].reshape(shape + dist.event_shape)
             lp = lp + dist.log_prob(y)
             i = j
 
@@ -83,28 +127,28 @@ class Joint(Distribution):
         return f'{self.__class__.__name__}(\n' + ',\n'.join(lines) + '\n)'
 
 
-class JointNormal(Independent):
-    r"""Joint distribution of independent normal random variables"""
-
-    def __init__(self, loc: Tensor, scale: Tensor, ndims: int = 1):
-        super().__init__(Normal(loc, scale), ndims)
-
-    def __repr__(self) -> str:
-        return f'Joint{self.base_dist}'
-
-
-class JointUniform(Independent):
-    r"""Joint distribution of independent uniform random variables"""
-
-    def __init__(self, low: Tensor, high: Tensor, ndims: int = 1):
-        super().__init__(Uniform(low, high), ndims)
-
-    def __repr__(self) -> str:
-        return f'Joint{self.base_dist}'
-
-
 class Sort(Distribution):
-    r"""Sort of independent scalar random variables"""
+    r"""Creates a distribution for a :math:`n`-d random variable :math:`X`, whose elements
+    :math:`X_i` are :math:`n` draws from a base distribution :math:`p(Y)`, ordered
+    such that :math:`X_i \leq X_{i + 1}`.
+
+    .. math:: p(X = x) = \begin{cases}
+            n! \, \prod_{i = 1}^n p(Y = x_i) & \text{if $x$ is ordered} \\
+            0 & \text{otherwise}
+        \end{cases}
+
+    Arguments:
+        base: A base distribution :math:`p(Y)`.
+        n: The number of draws :math:`n`.
+        descending: Whether the elements are sorted in descending order or not.
+
+    Example:
+        >>> d = Sort(Normal(0, 1), 3)
+        >>> d.event_shape
+        torch.Size([3])
+        >>> d.sample()
+        tensor([-1.4434, -0.3861,  0.2439])
+    """
 
     def __init__(
         self,
@@ -157,7 +201,29 @@ class Sort(Distribution):
 
 
 class TopK(Sort):
-    r"""Top k of independent scalar random variables"""
+    r"""Creates a distribution for a :math:`k`-d random variable :math:`X`, whose elements
+    :math:`X_i` are the top :math:`k` among :math:`n` draws from a base distribution
+    :math:`p(Y)`, ordered such that :math:`X_i \leq X_{i + 1}`.
+
+    .. math:: p(X = x) = \begin{cases}
+            \frac{n!}{(n - k)!} \, \prod_{i = 1}^k p(Y = x_i)
+                \, P(Y \geq x_k)^{n - k} & \text{if $x$ is ordered} \\
+            0 & \text{otherwise}
+        \end{cases}
+
+    Arguments:
+        base: A base distribution :math:`p(Y)`.
+        k: The number of selected elements :math:`k`.
+        n: The number of draws :math:`n`.
+        kwargs: Keyword arguments passed to :class:`Sort`.
+
+    Example:
+        >>> d = TopK(Normal(0, 1), 2, 3)
+        >>> d.event_shape
+        torch.Size([2])
+        >>> d.sample()
+        tensor([-0.2167,  0.6739])
+    """
 
     def __init__(
         self,
@@ -196,13 +262,28 @@ class TopK(Sort):
         )
 
 
-class Maximum(TopK):
-    r"""Maximum of independent scalar random variables"""
+class Minimum(TopK):
+    r"""Creates a distribution for a scalar random variable :math:`X`, which is the
+    minimum among :math:`n` draws from a base distribution :math:`p(Y)`.
+
+    .. math:: p(X = x) = n \, p(Y = x) \, P(Y \geq x)^{n - 1}
+
+    Arguments:
+        base: A base distribution :math:`p(Y)`.
+        n: The number of draws :math:`n`.
+
+    Example:
+        >>> d = Minimum(Normal(0, 1), 3)
+        >>> d.event_shape
+        torch.Size([])
+        >>> d.sample()
+        tensor(-1.7552)
+    """
 
     def __init__(self, base: Distribution, n: int = 2):
         super().__init__(base, 1, n)
 
-        self.descending = True
+        self.descending = False
 
     def __repr__(self) -> str:
         return Sort.__repr__(self)
@@ -218,48 +299,57 @@ class Maximum(TopK):
         return super().log_prob(value.unsqueeze(dim=-1))
 
 
-class Minimum(Maximum):
-    r"""Minimum of independent scalar random variables"""
+class Maximum(Minimum):
+    r"""Creates a distribution for a scalar random variable :math:`X`, which is the
+    maximum among :math:`n` draws from a base distribution :math:`p(Y)`.
+
+    .. math:: p(X = x) = n \, p(Y = x) \, P(Y \leq x)^{n - 1}
+
+    Arguments:
+        base: A base distribution :math:`p(Y)`.
+        n: The number of draws :math:`n`.
+
+    Example:
+        >>> d = Maximum(Normal(0, 1), 3)
+        >>> d.event_shape
+        torch.Size([])
+        >>> d.sample()
+        tensor(1.1644)
+    """
 
     def __init__(self, base: Distribution, n: int = 2):
         super().__init__(base, n)
 
-        self.descending = False
+        self.descending = True
 
 
 class TransformedUniform(TransformedDistribution):
-    r"""T-uniform distribution"""
+    r"""Creates a distribution for a random variable :math:`X`, whose
+    transformation :math:`f(X)` is uniformly distributed over the interval
+    :math:`[f(l), f(u)]`.
 
-    arg_constraints = Uniform.arg_constraints
+    .. math:: p(X = x) = f'(x) \frac{1}{f(u) - f(l)}
 
-    def __init__(self, low: Tensor, high: Tensor, t: Transform):
-        self.low, self.high = broadcast_all(low, high)
-        super().__init__(Uniform(t(self.low), t(self.high)), [t.inv])
+    Arguments:
+        lower: A lower bound :math:`l` (inclusive).
+        upper: An upper bound :math:`u` (exclusive).
+        f: A transformation :math:`f`, monotonically increasing over
+            :math:`[l, u]`.
 
+    Example:
+        >>> d = TransformedUniform(-1, 1, ExpTransform())
+        >>> d.event_shape
+        torch.Size([])
+        >>> d.sample()
+        tensor(0.5594)
+    """
 
-class PowerUniform(TransformedUniform):
-    r"""Power-uniform distribution"""
-
-    def __init__(self, low: Tensor, high: Tensor, exponent: float):
-        super().__init__(low, high, PowerTransform(exponent))
-
-
-class CosineUniform(TransformedUniform):
-    r"""Cosine-uniform distribution"""
-
-    def __init__(self, low: Tensor, high: Tensor):
-        super().__init__(low, high, CosineTransform())
-
-
-class SineUniform(TransformedUniform):
-    r"""Sine-uniform distribution"""
-
-    def __init__(self, low: Tensor, high: Tensor):
-        super().__init__(low, high, SineTransform())
+    def __init__(self, lower: Tensor, upper: Tensor, f: Transform):
+        super().__init__(Uniform(f(lower), f(upper)), [f.inv])
 
 
-class CosineTransform(Transform):
-    r"""Transform via the mapping y = -cos(x)"""
+class CosTransform(Transform):
+    r"""Transform via the mapping :math:`y = -\cos(x)`."""
 
     domain = interval(0, math.pi)
     codomain = interval(-1, 1)
@@ -275,8 +365,8 @@ class CosineTransform(Transform):
         return x.sin().abs().log()
 
 
-class SineTransform(Transform):
-    r"""Transform via the mapping y = sin(x)"""
+class SinTransform(Transform):
+    r"""Transform via the mapping :math:`y = \sin(x)`."""
 
     domain = interval(-math.pi / 2, math.pi / 2)
     codomain = interval(-1, 1)
