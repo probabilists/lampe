@@ -136,6 +136,41 @@ def broadcast(*tensors: Tensor, ignore: Union[int, List[int]] = None) -> List[Te
     ]
 
 
+def deepto(obj: Any, *args, **kwargs) -> Any:
+    r"""Moves and/or casts all tensors referenced in an object, recursively.
+
+    .. warning::
+        Unless a tensor already has the correct type and device, the referenced
+        tensors are replaced by a copy with the desired properties, which will
+        break cross-references. Proceed with caution.
+
+    Arguments:
+        obj: An object.
+        args: Positional arguments passed to :func:`torch.Tensor.to`.
+        kwargs: Keyword arguments passed to :func:`torch.Tensor.to`.
+
+    Example:
+        >>> tensors = [torch.arange(i) for i in range(1, 4)]
+        >>> deepto(tensors, dtype=torch.float)
+        [tensor([0.]), tensor([0., 1.]), tensor([0., 1., 2.])]
+    """
+
+    if torch.is_tensor(obj):
+        obj = obj.to(*args, **kwargs)
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            obj[key] = deepto(value, *args, **kwargs)
+    elif isinstance(obj, list):
+        for i, value in enumerate(obj):
+            obj[i] = deepto(value, *args, **kwargs)
+    elif isinstance(obj, tuple):
+        obj = tuple(deepto(value, *args, **kwargs) for value in obj)
+    elif hasattr(obj, '__dict__'):
+        deepto(obj.__dict__, *args, **kwargs)
+
+    return obj
+
+
 def starcompose(*fs: Callable) -> Callable:
     r"""Returns the composition :math:`g` of a sequence of functions
     :math:`(f_1, f_2, \dots, f_n)`.

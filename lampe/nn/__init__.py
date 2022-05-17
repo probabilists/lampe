@@ -8,7 +8,7 @@ from torch import Tensor, BoolTensor
 from typing import *
 
 
-__all__ = ['MLP', 'ResBlock', 'ResMLP']
+__all__ = ['MLP', 'ResBlock', 'ResMLP', 'MaskedMLP']
 
 
 class Affine(nn.Module):
@@ -236,3 +236,83 @@ class ResMLP(nn.Sequential):
 
         self.in_features = in_features
         self.out_features = out_features
+
+
+class MaskedLinear(nn.Linear):
+    r"""Creates a masked linear layer.
+
+    .. math:: y = x (W \odot A)^T + b
+
+    Arguments:
+        adjacency: The adjacency matrix :math:`A \in \{0, 1\}^{M \times N}`.
+        kwargs: Keyword arguments passed to :class:`torch.nn.Linear`.
+    """
+
+    def __init__(self, adjacency: BoolTensor, **kwargs):
+        super().__init__(*adjacency.shape, **kwargs)
+
+        self.register_buffer('mask', adjacency.t())
+
+    def forward(self, x: Tensor) -> Tensor:
+        return F.linear(x, self.mask * self.weight, self.bias)
+
+
+class MaskedMLP(MLP):
+    r"""Creates a masked multi-layer perceptron (MaskedMLP).
+
+    The resulting MLP is a transformation :math:`y = f(x)` such that the Jacobian
+    entry :math:`\frac{\partial y_j}{\partial x_i}` is null if :math:`A_{ij} = 0`.
+
+    Arguments:
+        adjacency: The adjacency matrix :math:`A \in \{0, 1\}^{M \times N}`.
+        args: Positional arguments passed to :class:`MLP`.
+        kwargs: Keyword arguments passed to :class:`MLP`.
+
+    Example:
+        >>> adjacency = torch.rand(4, 4) < 0.5
+        >>> adjacency
+        tensor([[False,  True, False, False],
+                [ True, False,  True, False],
+                [False,  True, False, False],
+                [False,  True,  True, False]])
+        >>> net = MaskedMLP(adjacency, [16, 32], activation='ELU')
+        >>> net
+        MaskedMLP(
+          (0): MaskedLinear(in_features=4, out_features=16, bias=True)
+          (1): ELU(alpha=1.0)
+          (2): MaskedLinear(in_features=16, out_features=32, bias=True)
+          (3): ELU(alpha=1.0)
+          (4): MaskedLinear(in_features=32, out_features=4, bias=True)
+        )
+        >>> x = torch.randn(4)
+        >>> torch.autograd.functional.jacobian(net, x).t()
+        tensor([[ 0.0000,  0.0031,  0.0000,  0.0000],
+                [-0.0323,  0.0000, -0.0547,  0.0000],
+                [ 0.0000, -0.0245,  0.0000,  0.0000],
+                [ 0.0000,  0.0060, -0.0063,  0.0000]])
+    """
+
+    def __init__(
+        self,
+        adjacency: BoolTensor,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*adjacency.shape, *args, **kwargs)
+
+        # i precedes j if A_kj = 1 for all k such that A_ki = 1
+        precedence = adjacency.t().int() @ adjacency.int() == adjacency.sum(dim=0).unsqueeze(-1)
+
+        for i, layer in enumerate(self):
+            if isinstance(layer, nn.Linear):
+                if i > 0:
+                    mask = precedence[indices]
+                else:
+                    mask = adjacency
+
+                if i < len(self) - 1:
+                    reachable = mask.sum(0).nonzero().squeeze()
+                    indices = reachable[torch.arange(layer.out_features) % len(reachable)]
+                    mask = mask[:, indices]
+
+                self[i] = MaskedLinear(adjacency=mask)

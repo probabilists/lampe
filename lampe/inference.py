@@ -13,9 +13,9 @@ import torch.nn.functional as F
 from torch import Tensor, BoolTensor, Size
 from typing import *
 
+from .distributions import Distribution, DiagNormal, AffineTransform
 from .nn import Affine, MLP
-from .nn.flows import MAF
-from .priors import Distribution, DiagNormal
+from .nn.flows import Buffer, FlowModule, MAF
 from .utils import broadcast
 
 
@@ -277,7 +277,8 @@ class NPE(nn.Module):
         x_dim: The dimensionality :math:`L` of the observation space.
         moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
             the moments are used to standardize the parameters.
-        kwargs: Keyword arguments passed to :class:`nn.flows.MAF`.
+        build: The flow constructor (e.g. :class:`lampe.nn.flows.MAF`).
+        kwargs: Keyword arguments passed to the constructor.
     """
 
     def __init__(
@@ -285,11 +286,16 @@ class NPE(nn.Module):
         theta_dim: int,
         x_dim: int,
         moments: Tuple[Tensor, Tensor] = None,
+        build: Callable[[int, int], FlowModule] = MAF,
         **kwargs,
     ):
         super().__init__()
 
-        self.flow = MAF(theta_dim, x_dim, moments=moments, **kwargs)
+        self.flow = build(theta_dim, x_dim, **kwargs)
+
+        if moments is not None:
+            mu, sigma = moments
+            self.flow.transforms.insert(0, Buffer(AffineTransform, -mu / sigma, 1 / sigma))
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r"""
@@ -303,8 +309,9 @@ class NPE(nn.Module):
 
         theta, x = broadcast(theta, x, ignore=1)
 
-        return self.flow.log_prob(theta, x)
+        return self.flow(x).log_prob(theta)
 
+    @torch.no_grad()
     def sample(self, x: Tensor, shape: Size = ()) -> Tensor:
         r"""
         Arguments:
@@ -316,7 +323,7 @@ class NPE(nn.Module):
             with shape :math:`(*, S, D)`.
         """
 
-        return self.flow.sample(x, shape)
+        return self.flow(x).sample(shape)
 
 
 class NPELoss(nn.Module):
@@ -385,8 +392,9 @@ class AMNPE(NPE):
 
         theta, x, b = broadcast(theta, x, b * 2. - 1., ignore=1)
 
-        return self.flow.log_prob(theta, torch.cat((x, b), dim=-1))
+        return self.flow(torch.cat((x, b), dim=-1)).log_prob(theta)
 
+    @torch.no_grad()
     def sample(self, x: Tensor, b: BoolTensor, shape: Size = ()) -> Tensor:
         r"""
         Arguments:
@@ -401,7 +409,7 @@ class AMNPE(NPE):
 
         x, b = broadcast(x, b * 2. - 1., ignore=1)
 
-        return self.flow.sample(torch.cat((x, b), dim=-1), shape)[..., b]
+        return self.flow(torch.cat((x, b), dim=-1)).sample(shape)[..., b]
 
 
 class AMNPELoss(nn.Module):
