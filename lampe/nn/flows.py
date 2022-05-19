@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from math import ceil
 from torch import Tensor, Size
 from typing import *
 
@@ -102,13 +103,23 @@ class Buffer(nn.Module):
         return self.meta(*self._buffers.values())
 
 
+class Parameters(nn.ParameterList):
+    r"""Holds tensors as parameters."""
+
+    def __init__(self, parameters: Iterable[Tensor]):
+        super().__init__(list(map(nn.Parameter, parameters)))
+
+    def extra_repr(self) -> str:
+        return '\n'.join(f'({i}): {p.shape}' for i, p in enumerate(self))
+
+
 class Parametrization(nn.Module):
     r"""Creates a parametrization module."""
 
     def __init__(
         self,
         meta: Callable[..., Any],
-        *shapes: Size,
+        *params: Tensor,
         context: int = 0,
         build: Callable[[int, int], nn.Module] = MLP,
         **kwargs,
@@ -116,22 +127,20 @@ class Parametrization(nn.Module):
         super().__init__()
 
         self.meta = meta
-        self.shapes = list(map(Size, shapes))
+        self.shapes = [p.shape for p in params]
         self.sizes = [s.numel() for s in self.shapes]
 
         if context > 0:
             self.params = build(context, sum(self.sizes), **kwargs)
         else:
-            self.params = nn.ParameterList(list(
-                map(nn.Parameter, map(torch.randn, self.shapes))
-            ))
+            self.params = Parameters(params)
 
     def extra_repr(self) -> str:
         base = self.meta(*map(torch.randn, self.shapes))
         return f'(base): {base}'
 
     def forward(self, y: Tensor = None) -> Any:
-        if isinstance(self.params, nn.ParameterList):
+        if isinstance(self.params, Parameters):
             args = self.params
         else:
             args = self.params(y).split(self.sizes, dim=-1)
@@ -146,9 +155,10 @@ class MaskedAutoregressiveTransform(TransformModule):
     Arguments:
         features: The number of features.
         context: The number of context features.
+        order: The feature ordering. If :py:`None`, use :py:`range(features)` instead.
         passes: The number of passes for the inverse transformation.
-        permute: Whether to randomly permute the features or not.
-        base: The type of base transform (:py:`'affine'` or :py:`'spline'`).
+        univariate: A univariate transformation constructor.
+        shapes: The shapes of the univariate transformation parameters.
         kwargs: Keyword arguments passed to :class:`lampe.nn.MaskedMLP`.
     """
 
@@ -156,27 +166,23 @@ class MaskedAutoregressiveTransform(TransformModule):
         self,
         features: int,
         context: int = 0,
-        passes: int = 2,  # coupling
-        permute: bool = True,
-        base: str = 'affine',
+        order: LongTensor = None,
+        passes: int = -1,
+        univariate: Callable[..., Transform] = MonotonicAffineTransform,
+        shapes: List[Size] = [(), ()],
         **kwargs,
     ):
         super().__init__()
 
-        if base == 'spline':
-            bins = kwargs.pop('bins', 8)
-
-            self.base = MonotonicRationalQuadraticSplineTransform
-            self.shapes = [(bins,), (bins,), (bins - 1,)]
-        else:  # if base == 'affine'
-            self.base = MonotonicAffineTransform
-            self.shapes = [(), ()]
-
-        self.shapes = list(map(Size, self.shapes))
+        self.univariate = univariate
+        self.shapes = list(map(Size, shapes))
         self.sizes = [s.numel() for s in self.shapes]
 
+        if order is None:
+            order = torch.arange(features)
+
         self.passes = passes if passes > 0 else features
-        self.order = (torch.randperm if permute else torch.arange)(features) % self.passes
+        self.order = torch.div(order, ceil(features / self.passes), rounding_mode='floor')
 
         in_order = torch.cat((self.order, torch.full((context,), -1)))
         out_order = self.order.tile(sum(self.sizes))
@@ -184,7 +190,7 @@ class MaskedAutoregressiveTransform(TransformModule):
         self.params = MaskedMLP(in_order[..., None] < out_order, **kwargs)
 
     def extra_repr(self) -> str:
-        base = self.base(*map(torch.randn, self.shapes))
+        base = self.univariate(*map(torch.randn, self.shapes))
 
         return '\n'.join([
             f'(base): {base}',
@@ -203,7 +209,7 @@ class MaskedAutoregressiveTransform(TransformModule):
             args = params.split(self.sizes, dim=-1)
             args = [a.reshape(a.shape[:-1] + s) for a, s in zip(args, self.shapes)]
 
-            return self.base(*args)
+            return self.univariate(*args)
 
         return AutoregressiveTransform(meta, self.passes)
 
@@ -220,7 +226,6 @@ class MAF(FlowModule):
         features: The number of features.
         context: The number of context features.
         transforms: The number of autoregressive transforms.
-        linear: Whether to insert intermediate linear transforms or not.
         kwargs: Keyword arguments passed to :class:`MaskedAutoregressiveTransform`.
     """
 
@@ -232,21 +237,19 @@ class MAF(FlowModule):
         linear: bool = False,
         **kwargs,
     ):
-        series = []
+        increasing = torch.arange(features)
+        decreasing = torch.flipud(increasing)
 
-        for _ in range(transforms):
-            if linear:
-                series.extend([
-                    Parametrization(MonotonicAffineTransform, (features,), (features,)),
-                    Parametrization(
-                        LULinearTransform,
-                        (features * (features - 1) // 2,),
-                        (features * (features - 1) // 2,),
-                    ),
-                ])
-
-            series.append(MaskedAutoregressiveTransform(features, context, **kwargs))
+        transforms = [
+            MaskedAutoregressiveTransform(
+                features=features,
+                context=context,
+                order=decreasing if i % 2 else increasing,
+                **kwargs,
+            )
+            for i in range(transforms)
+        ]
 
         base = Buffer(DiagNormal, torch.zeros(features), torch.ones(features))
 
-        super().__init__(series, base)
+        super().__init__(transforms, base)

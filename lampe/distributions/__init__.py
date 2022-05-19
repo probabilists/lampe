@@ -6,6 +6,7 @@ import torch
 from textwrap import indent
 from torch import Tensor, Size
 from torch.distributions import *
+from torch.distributions import constraints
 from typing import *
 
 from .transforms import *
@@ -87,9 +88,7 @@ class Joint(Distribution):
     """
 
     def __init__(self, *marginals: Distribution):
-        super().__init__(
-            batch_shape=torch.broadcast_shapes(*[m.batch_shape for m in marginals]),
-        )
+        super().__init__(batch_shape=torch.broadcast_shapes(*[m.batch_shape for m in marginals]))
 
         self.marginals = [m.expand(self.batch_shape) for m in marginals]
 
@@ -150,6 +149,48 @@ class Joint(Distribution):
         return torch.cat(x, dim=-1)
 
 
+class GeneralizedNormal(Distribution):
+    r"""Creates a generalized normal distribution.
+
+    .. math:: p(X = x) = \frac{\beta}{2 \Gamma(1 / \beta)} \exp(-|x|^\beta)
+
+    Wikipedia:
+        https://en.wikipedia.org/wiki/Generalized_normal_distribution
+
+    Arguments:
+        beta: The shape parameter :math:`\beta`.
+    """
+
+    arg_constraints = {'beta': constraints.positive}
+    support = constraints.real
+    has_rsample = True
+
+    def __init__(self, beta: Tensor):
+        self.beta = torch.as_tensor(beta)
+        super().__init__(batch_shape=self.beta.shape)
+
+    def expand(self, batch_shape: Size, new: Distribution = None) -> Distribution:
+        new = self._get_checked_instance(GeneralizedNormal, new)
+        new.beta = self.beta.expand(batch_shape)
+
+        Distribution.__init__(new, batch_shape=batch_shape, validate_args=False)
+
+        return new
+
+    def log_prob(self, x: Tensor) -> Tensor:
+        return (
+            torch.log(self.beta / 2)
+            - torch.lgamma(1 / self.beta)
+            - abs(x)**self.beta
+        )
+
+    def rsample(self, shape: Size = ()) -> Tensor:
+        beta = self.beta.expand(shape + self.beta.shape)
+        x = torch._standard_gamma(1 / beta)**(1 / beta)
+        x = x * torch.sign(2 * torch.rand_like(x) - 1)
+        return x
+
+
 class DiagNormal(Independent):
     r"""Creates a multivariate normal distribution parametrized by the variables
     mean :math:`\mu` and standard deviation :math:`\sigma`, but assumes no
@@ -177,6 +218,7 @@ class DiagNormal(Independent):
     def expand(self, batch_shape: Size, new: Distribution = None) -> Distribution:
         new = self._get_checked_instance(DiagNormal, new)
         return super().expand(batch_shape, new)
+
 
 class BoxUniform(Independent):
     r"""Creates a distribution for a multivariate random variable :math:`X`
@@ -209,66 +251,6 @@ class BoxUniform(Independent):
     def expand(self, batch_shape: Size, new: Distribution = None) -> Distribution:
         new = self._get_checked_instance(BoxUniform, new)
         return super().expand(batch_shape, new)
-
-
-class NoisyUniform(Uniform):
-    r"""Creates a distribution for a random variable :math:`X = Z + \varepsilon`, where
-    :math:`Z` follows a uniform distribution :math:`\mathcal{U}(l, u)` and
-    :math:`\varepsilon` is random noise.
-
-    .. math:: p(X = x) = \frac{1}{u - l}
-        \int_{x - u}^{x - l} p(\varepsilon) \operatorname{d}\!\varepsilon
-
-    Arguments:
-        lower: A lower bound :math:`l` (inclusive).
-        upper: An upper bound :math:`u` (exclusive).
-        noise: The noise distribution :math:`p(\varepsilon)`.
-        bins: The number of bins to approximate the integral.
-
-    Example:
-        >>> d = NoisyUniform(0, 1, Normal(0, 1))
-        >>> d.sample()
-        tensor(1.2437)
-    """
-
-    has_rsample = True
-
-    def __init__(
-        self,
-        lower: Tensor,
-        upper: Tensor,
-        noise: Distribution,
-        bins: int = 32,
-    ):
-        super().__init__(lower, upper)
-
-        self.noise = noise
-        self.bins = bins
-
-    def expand(self, batch_shape: Size, new: Distribution = None) -> Distribution:
-        new = self._get_checked_instance(NoisyUniform, new)
-        new.noise = self.noise.expand(batch_shape)
-        new.bins = self.bins
-        return super().expand(batch_shape, new)
-
-    def log_prob(self, x: Tensor) -> Tensor:
-        a, b = x - self.high, x - self.low
-        p = self.noise.cdf(b) - self.noise.cdf(a)
-
-        t = torch.linspace(0, 1, self.bins)
-        t = t.view((-1,) + (1,) * a.dim()).to(a)
-
-        return torch.where(
-            p > 1e-5,
-            torch.log(p + 1e-9) - torch.log(b - a),
-            torch.logsumexp(
-                self.noise.log_prob(torch.lerp(a, b, t)),
-                dim=0,
-            ) - math.log(self.bins),
-        )
-
-    def rsample(self, shape: Size = ()) -> Tensor:
-        return super().rsample(shape) + self.noise.rsample(shape)
 
 
 class TransformedUniform(NormalizingFlow):

@@ -14,8 +14,41 @@ from ..utils import broadcast
 torch.distributions.transforms._InverseTransform.__name__ = 'Inverse'
 
 
+class PermutationTransform(Transform):
+    r"""Transform via a permutation of the elements.
+
+    Arguments:
+        order: The permuatation order, with shape :math:`(*, D)`.
+    """
+
+    domain = constraints.real_vector
+    codomain = constraints.real_vector
+    bijective = True
+
+    def __init__(
+        self,
+        order: LongTensor,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self.order = order
+
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}({self.order.tolist()})'
+
+    def _call(self, x: Tensor) -> Tensor:
+        return x.gather(-1, self.order.expand(x.shape))
+
+    def _inverse(self, y: Tensor) -> Tensor:
+        return y.gather(-1, torch.argsort(self.order, -1).expand(y.shape))
+
+    def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
+        return x.new_zeros(x.shape[:-1])
+
+
 class CosTransform(Transform):
-    r"""Transform via the mapping :math:`y = -\cos(x)`."""
+    r"""Transform via the mapping :math:`f(x) = -\cos(x)`."""
 
     domain = constraints.interval(0, math.pi)
     codomain = constraints.interval(-1, 1)
@@ -35,7 +68,7 @@ class CosTransform(Transform):
 
 
 class SinTransform(Transform):
-    r"""Transform via the mapping :math:`y = \sin(x)`."""
+    r"""Transform via the mapping :math:`f(x) = \sin(x)`."""
 
     domain = constraints.interval(-math.pi / 2, math.pi / 2)
     codomain = constraints.interval(-1, 1)
@@ -55,7 +88,7 @@ class SinTransform(Transform):
 
 
 class MonotonicAffineTransform(Transform):
-    r"""Transform via the mapping :math:`y = x \times \text{softplus}(\alpha) + \beta`.
+    r"""Transform via the mapping :math:`f(x) = x \times \text{softplus}(\alpha) + \beta`.
 
     Arguments:
         shift: The shift term :math:`\beta`, with shape :math:`(*,)`.
@@ -88,6 +121,67 @@ class MonotonicAffineTransform(Transform):
 
     def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
         return torch.log(self.scale).expand(x.shape)
+
+
+class MonotonicSOSTransform(Transform):
+    r"""Transform via a sum of sigmoids
+
+    .. math:: f(x) = x + \sum_{i = 1}^K \gamma_i \sigma(x \times \alpha_i + \beta_i)
+
+    Arguments:
+        shift: The shift terms :math:`\beta_i`, with shape :math:`(*, K)`.
+        scale: The unconstrained scale factors :math:`\alpha_i`, with shape :math:`(*, K)`.
+        amplitude: The unconstrained amplitudes :math:`\gamma_i`, with shape :math:`(*, K)`.
+        bisect: The number of bisection steps for the inverse transformation.
+        eps: A numerical stability term.
+    """
+
+    domain = constraints.real
+    codomain = constraints.real
+    bijective = True
+    sign = +1
+
+    def __init__(
+        self,
+        shift: Tensor,
+        scale: Tensor,
+        amplitude: Tensor,
+        bisect: int = 16,
+        eps: float = 1e-3,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self.shift = shift
+        self.scale = F.softplus(scale) + eps
+        self.amplitude = F.softplus(amplitude) + eps
+
+        self.bisect = bisect
+
+    def _call(self, x: Tensor) -> Tensor:
+        return x + (self.amplitude * torch.sigmoid(x[..., None] * self.scale + self.shift)).sum(dim=-1)
+
+    def _inverse(self, y: Tensor) -> Tensor:
+        xa, xb = y - self.amplitude.sum(dim=-1), y
+        ya, yb = self._call(xa), self._call(xb)
+
+        for _ in range(self.bisect):
+            xc = (xa + xb) / 2
+            yc = self._call(xc)
+
+            xa, ya, xb, yb = torch.where(
+                yc <= y,
+                torch.stack((xc, yc, xb, yb)),
+                torch.stack((xa, ya, xc, yc)),
+            )
+
+        return (xa + xb) / 2
+
+    def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
+        sigmoids = torch.sigmoid(x[..., None] * self.scale + self.shift)
+        jacobian = 1 + (self.amplitude * self.scale * sigmoids * (1 - sigmoids)).sum(dim=-1)
+
+        return torch.log(jacobian)
 
 
 class MonotonicRationalQuadraticSplineTransform(Transform):
@@ -206,98 +300,6 @@ class MonotonicRationalQuadraticSplineTransform(Transform):
         )
 
         return torch.log(jacobian) * mask
-
-
-class LULinearTransform(Transform):
-    r"""Transform via the mapping :math:`y = LU x`.
-
-    The diagonal elements of :math:`L` and :math:`U` are set to 1.
-
-    Arguments:
-        lower: The lower-triangular elements of :math:`L`, with shape
-            :math:`(*, \frac{D (D - 1)}{2})`.
-        upper: The upper-triangular elements of :math:`U`, with shape
-            :math:`(*, \frac{D (D - 1)}{2})`.
-    """
-
-    domain = constraints.real_vector
-    codomain = constraints.real_vector
-    bijective = True
-
-    def __init__(
-        self,
-        lower: Tensor,
-        upper: Tensor,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-
-        d = int((2 * lower.shape[-1])**(1 / 2) + 1)
-
-        identity = torch.eye(d).reshape(-1).to(lower).expand(*lower.shape[:-1], -1)
-        mask = lower.new_ones((d, d), dtype=bool)
-        mask = torch.tril(mask, diagonal=-1)
-
-        lower = torch.masked_scatter(identity, mask.reshape(-1), lower)
-        upper = torch.masked_scatter(identity, mask.t().reshape(-1), upper)
-
-        self.lower = lower.reshape(lower.shape[:-1] + (d, d))
-        self.upper = upper.reshape(upper.shape[:-1] + (d, d))
-
-    def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({self.lower.shape[-1]})'
-
-    def _call(self, x: Tensor) -> Tensor:
-        return torch.matmul(self.lower, torch.matmul(self.upper, x[..., None])).squeeze(-1)
-
-    def _inverse(self, y: Tensor) -> Tensor:
-        return torch.triangular_solve(
-            torch.triangular_solve(
-                y[..., None],
-                self.lower,
-                upper=False,
-                unitriangular=True,
-            ).solution,
-            self.upper,
-            upper=True,
-            unitriangular=True,
-        ).solution.squeeze(-1)
-
-    def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
-        return x.new_zeros(x.shape[:-1])
-
-
-class Permutation(Transform):
-    r"""Transform via a permutation of the elements.
-
-    Arguments:
-        order: The permuatation order, with shape :math:`(*, D)`.
-    """
-
-    domain = constraints.real_vector
-    codomain = constraints.real_vector
-    bijective = True
-
-    def __init__(
-        self,
-        order: LongTensor,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-
-        self.order = order
-
-    def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({self.order.tolist()})'
-
-    def _call(self, x: Tensor) -> Tensor:
-        return x.gather(-1, self.order.expand(x.shape))
-
-    def _inverse(self, y: Tensor) -> Tensor:
-        return y.gather(-1, torch.argsort(self.order, -1).expand(y.shape))
-
-    def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
-        return x.new_zeros(x.shape[:-1])
 
 
 class AutoregressiveTransform(Transform):
