@@ -123,8 +123,8 @@ class MonotonicAffineTransform(Transform):
         return torch.log(self.scale).expand(x.shape)
 
 
-class MonotonicRationalQuadraticSplineTransform(Transform):
-    r"""Creates a monotonic rational-quadratic spline transformation.
+class MonotonicRQSTransform(Transform):
+    r"""Creates a monotonic rational-quadratic spline (RQS) transformation.
 
     References:
         Neural Spline Flows (Durkan et al., 2019)
@@ -148,18 +148,18 @@ class MonotonicRationalQuadraticSplineTransform(Transform):
         widths: Tensor,
         heights: Tensor,
         derivatives: Tensor,
-        bound: float = 3,
+        bound: float = 1e1,
         eps: float = 1e-3,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
-        widths = F.softmax(widths, dim=-1) + eps
-        heights = F.softmax(heights, dim=-1) + eps
+        widths = 2 * F.softmax(widths, dim=-1) + eps
+        heights = 2 * F.softmax(heights, dim=-1) + eps
         derivatives = F.softplus(derivatives) + eps
 
-        self.horizontal = 2 * bound * torch.cumsum(F.pad(widths, (1, 0), value=-1), dim=-1)
-        self.vertical = 2 * bound * torch.cumsum(F.pad(heights, (1, 0), value=-1), dim=-1)
+        self.horizontal = bound * torch.cumsum(F.pad(widths, (1, 0), value=-1), dim=-1)
+        self.vertical = bound * torch.cumsum(F.pad(heights, (1, 0), value=-1), dim=-1)
         self.derivatives = F.pad(derivatives, (1, 1), value=1)
 
     def __repr__(self) -> str:
@@ -169,7 +169,7 @@ class MonotonicRationalQuadraticSplineTransform(Transform):
     def bins(self) -> int:
         return self.horizontal.shape[-1] - 1
 
-    def bin(self, k: LongTensor) -> Tuple:
+    def bin(self, k: LongTensor) -> Tuple[Tensor, ...]:
         mask = torch.logical_and(0 <= k, k < self.bins)
 
         k = k % self.bins

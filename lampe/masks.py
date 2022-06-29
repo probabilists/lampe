@@ -3,7 +3,7 @@ r"""Masking helpers."""
 import torch
 import torch.nn as nn
 
-from torch import Tensor, BoolTensor
+from torch import Tensor, BoolTensor, Size
 from torch.distributions import Distribution, Independent
 from typing import *
 
@@ -64,7 +64,7 @@ class BernoulliMask(Independent):
     def log_prob(b: BoolTensor) -> Tensor:
         return super().log_prob(b.float())
 
-    def sample(self, shape: torch.Size = ()) -> BoolTensor:
+    def sample(self, shape: Size = ()) -> BoolTensor:
         return super().sample(shape).bool()
 
 
@@ -104,6 +104,6 @@ class SelectionMask(Distribution):
         prob = match.float().mean(dim=-1)
         return prob.log()
 
-    def sample(self, shape: torch.Size = ()) -> BoolTensor:
+    def sample(self, shape: Size = ()) -> BoolTensor:
         index = torch.randint(len(self.selection), shape, device=self.device)
         return self.selection[index]

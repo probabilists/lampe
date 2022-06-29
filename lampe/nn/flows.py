@@ -44,7 +44,7 @@ class TransformModule(nn.Module):
             y: A context :math:`y`.
 
         Returns:
-            A transform :math:`y = f(x | y)`.
+            A transform :math:`z = f(x | y)`.
         """
 
         raise NotImplementedError()
@@ -253,6 +253,36 @@ class MAF(FlowModule):
         base = Buffer(DiagNormal, torch.zeros(features), torch.ones(features))
 
         super().__init__(transforms, base)
+
+
+class NSF(MAF):
+    r"""Creates a neural spline flow (NSF).
+
+    References:
+        Neural Spline Flows (Durkan et al., 2019)
+        https://arxiv.org/abs/1906.04032
+
+    Arguments:
+        features: The number of features.
+        context: The number of context features.
+        bins: The number of bins :math:`K`.
+        kwargs: Keyword arguments passed to :class:`MAF`.
+    """
+
+    def __init__(
+        self,
+        features: int,
+        context: int = 0,
+        bins: int = 8,
+        **kwargs,
+    ):
+        super().__init__(
+            features=features,
+            context=context,
+            univariate=MonotonicRQSTransform,
+            shapes=[(bins,), (bins,), (bins-1,)],
+            **kwargs,
+        )
 
 
 class NeuralAutoregressiveTransform(MaskedAutoregressiveTransform):

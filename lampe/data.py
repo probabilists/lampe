@@ -230,6 +230,9 @@ class H5Dataset(IterableDataset):
             100%|██████████| 4096/4096 [01:35<00:00, 42.69sample/s]
         """
 
+        # Pairs
+        pairs = iter(pairs)
+
         # File
         file = Path(file)
         file.parent.mkdir(parents=True, exist_ok=True)
@@ -239,25 +242,29 @@ class H5Dataset(IterableDataset):
             f.attrs.update(meta)
 
             ## Datasets
-            theta, x = map(np.asarray, next(iter(pairs)))
-            theta, x = theta[0], x[0]
+            theta, x = map(np.asarray, next(pairs))
 
-            f.create_dataset('theta', (size,) + theta.shape, dtype=dtype)
-            f.create_dataset('x', (size,) + x.shape, dtype=dtype)
+            f.create_dataset('theta', (size,) + theta.shape[1:], dtype=dtype)
+            f.create_dataset('x', (size,) + x.shape[1:], dtype=dtype)
 
             ## Store
             with tqdm(total=size, unit='sample') as tq:
                 i = 0
 
-                for theta, x in pairs:
+                while True:
                     j = min(i + theta.shape[0], size)
 
-                    f['theta'][i:j] = np.asarray(theta)[:j-i]
-                    f['x'][i:j] = np.asarray(x)[:j-i]
+                    f['theta'][i:j] = theta[:j-i]
+                    f['x'][i:j] = x[:j-i]
 
                     tq.update(j - i)
 
                     if j < size:
                         i = j
+
+                        try:
+                            theta, x = map(np.asarray, next(pairs))
+                        except StopIteration:
+                            break
                     else:
                         break

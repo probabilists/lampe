@@ -342,7 +342,7 @@ class TwoWayELU(nn.ELU):
     """
 
     def forward(self, x: Tensor) -> Tensor:
-        x0, x1 = torch.split(x, x.shape[-1] // 2, dim=-1)
+        x0, x1 = torch.chunk(x, 2, dim=-1)
 
         return torch.cat((
             super().forward(x0),

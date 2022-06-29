@@ -8,7 +8,7 @@ from torch.optim import Optimizer
 from typing import *
 
 
-def broadcast(*tensors: Tensor, ignore: Union[int, List[int]] = None) -> List[Tensor]:
+def broadcast(*tensors: Tensor, ignore: Union[int, List[int]] = 0) -> List[Tensor]:
     r"""Broadcasts tensors together.
 
     The term broadcasting describes how PyTorch treats tensors with different shapes
