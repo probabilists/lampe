@@ -247,7 +247,7 @@ class MonotonicTransform(Transform):
     The inverse function :math:`f^{-1}` is approximated using the bisection method.
 
     Wikipedia:
-        https://en.wikipedia.org/wiki/Bisection_method
+        https://wikipedia.org/wiki/Bisection_method
 
     Arguments:
         f: A monotonic univariate function :math:`f(x)`.
