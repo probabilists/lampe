@@ -18,6 +18,10 @@ Alternatively, if you need the latest features, you can install it from the repo
 pip install git+https://github.com/francois-rozet/lampe
 ```
 
+## Contributing
+
+If you have a question, an issue or would like to contribute, please read our [contributing guidelines](CONTRIBUTING.md).
+
 ## Documentation
 
 The documentation is made with [Sphinx](https://www.sphinx-doc.org) and [Furo](https://github.com/pradyunsg/furo) and is hosted at [francois-rozet.github.io/lampe](https://francois-rozet.github.io/lampe).

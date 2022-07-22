@@ -36,7 +36,7 @@ setuptools.setup(
     install_requires=required,
     extras_require={
         'docs': ['furo', 'sphinx'],
-        'test': ['pytest', 'pytest-cov'],
+        'test': ['pytest'],
     },
     python_requires='>=3.8',
 )
