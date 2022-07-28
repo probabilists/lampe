@@ -43,9 +43,9 @@ class NormalizingFlow(TransformedDistribution):
         base: A base distribution :math:`p(Z)`.
 
     Example:
-        >>> d = NormalizingFlow([ExpTransform().inv], Normal(0, 1))
+        >>> d = NormalizingFlow([ExpTransform()], Gamma(2, 1))
         >>> d.sample()
-        tensor(0.1316)
+        tensor(1.1316)
     """
 
     def __init__(
@@ -132,7 +132,7 @@ class Joint(Distribution):
 
         for m in self.marginals:
             z = m.rsample(shape)
-            z = z.reshape(shape + (-1,))
+            z = z.reshape(shape + m.batch_shape + (-1,))
             x.append(z)
 
         return torch.cat(x, dim=-1)
@@ -143,7 +143,7 @@ class Joint(Distribution):
         with torch.no_grad():
             for m in self.marginals:
                 z = m.sample(shape)
-                z = z.reshape(shape + (-1,))
+                z = z.reshape(shape + m.batch_shape + (-1,))
                 x.append(z)
 
         return torch.cat(x, dim=-1)
@@ -159,6 +159,11 @@ class GeneralizedNormal(Distribution):
 
     Arguments:
         beta: The shape parameter :math:`\beta`.
+
+    Example:
+        >>> d = GeneralizedNormal(2)
+        >>> d.sample()
+        tensor(0.7480)
     """
 
     arg_constraints = {'beta': constraints.positive}
@@ -277,7 +282,7 @@ class TransformedUniform(NormalizingFlow):
     """
 
     def __init__(self, f: Transform, lower: Tensor, upper: Tensor):
-        super().__init__([f], Uniform(f(lower), f(upper)))
+        super().__init__([f], Uniform(*map(f, map(torch.as_tensor, (lower, upper)))))
 
     def expand(self, batch_shape: Size, new: Distribution = None) -> Distribution:
         new = self._get_checked_instance(TransformedUniform, new)
@@ -313,9 +318,9 @@ class Truncated(Distribution):
         lower: Tensor = float('-inf'),
         upper: Tensor = float('+inf'),
     ):
-        super().__init__(batch_shape=batch_shape)
+        super().__init__(batch_shape=base.batch_shape)
 
-        assert len(base.event_shape) < 1, "base must be univariate"
+        assert len(base.event_shape) < 1, "'base' has to be univariate"
 
         self.base = base
         self.uniform = Uniform(base.cdf(lower), base.cdf(upper))
@@ -373,7 +378,7 @@ class Sort(Distribution):
     ):
         super().__init__(batch_shape=base.batch_shape)
 
-        assert len(base.event_shape) < 1, "base must be univariate"
+        assert len(base.event_shape) < 1, "'base' has to be univariate"
 
         self.base = base
         self.n = n
@@ -399,25 +404,24 @@ class Sort(Distribution):
         return new
 
     def log_prob(self, x: Tensor) -> Tensor:
-        if self.descending:
-            ordered = x[..., :-1] >= x[..., 1:]
-        else:
-            ordered = x[..., :-1] <= x[..., 1:]
+        x = torch.movedim(x, -1, 0)
 
-        ordered = ordered.all(dim=-1)
+        if self.descending:
+            ordered = x[:-1] >= x[1:]
+        else:
+            ordered = x[:-1] <= x[1:]
+
+        ordered = ordered.all(dim=0)
 
         return (
             ordered.log()
             + self.log_fact
-            + self.base.log_prob(x).sum(dim=-1)
+            + self.base.log_prob(x).sum(dim=0)
         )
 
     def sample(self, shape: Size = ()) -> Tensor:
-        x = torch.stack([
-            self.base.sample(shape)
-            for _ in range(self.n)
-        ], dim=-1)
-        x, _ = torch.sort(x, dim=-1, descending=self.descending)
+        x = torch.movedim(self.base.sample((self.n,) + shape), 0, -1)
+        x = torch.sort(x, dim=-1, descending=self.descending).values
 
         return x
 
@@ -456,7 +460,7 @@ class TopK(Sort):
     ):
         super().__init__(base, n, **kwargs)
 
-        assert 1 <= k < n, "k should be in [1, n)"
+        assert 1 <= k < n, "k has to be in [1, n)"
 
         self.k = k
         self.log_fact = self.log_fact - math.log(math.factorial(n - k))
