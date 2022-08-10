@@ -43,7 +43,7 @@ class NormalizingFlow(TransformedDistribution):
         base: A base distribution :math:`p(Z)`.
 
     Example:
-        >>> d = NormalizingFlow([ExpTransform()], Gamma(2, 1))
+        >>> d = NormalizingFlow([ExpTransform()], Gamma(2.0, 1.0))
         >>> d.sample()
         tensor(1.1316)
     """
@@ -80,7 +80,7 @@ class Joint(Distribution):
         marginals: A list of distributions :math:`p(Z_i)`.
 
     Example:
-        >>> d = Joint(Uniform(0, 1), Normal(0, 1))
+        >>> d = Joint(Uniform(0.0, 1.0), Normal(0.0, 1.0))
         >>> d.event_shape
         torch.Size([2])
         >>> d.sample()
@@ -98,10 +98,7 @@ class Joint(Distribution):
 
     @property
     def event_shape(self) -> Size:
-        return Size([sum(
-            m.event_shape.numel()
-            for m in self.marginals
-        )])
+        return Size([sum(m.event_shape.numel() for m in self.marginals)])
 
     def expand(self, batch_shape: Size, new: Distribution = None) -> Distribution:
         new = self._get_checked_instance(Joint, new)
@@ -161,7 +158,7 @@ class GeneralizedNormal(Distribution):
         beta: The shape parameter :math:`\beta`.
 
     Example:
-        >>> d = GeneralizedNormal(2)
+        >>> d = GeneralizedNormal(2.0)
         >>> d.sample()
         tensor(0.7480)
     """
@@ -186,12 +183,12 @@ class GeneralizedNormal(Distribution):
         return (
             torch.log(self.beta / 2)
             - torch.lgamma(1 / self.beta)
-            - abs(x)**self.beta
+            - abs(x) ** self.beta
         )
 
     def rsample(self, shape: Size = ()) -> Tensor:
         beta = self.beta.expand(shape + self.beta.shape)
-        x = torch._standard_gamma(1 / beta)**(1 / beta)
+        x = torch._standard_gamma(1 / beta) ** (1 / beta)
         x = x * torch.sign(2 * torch.rand_like(x) - 1)
         return x
 
@@ -276,7 +273,7 @@ class TransformedUniform(NormalizingFlow):
         upper: An upper bound :math:`u` (exclusive).
 
     Example:
-        >>> d = TransformedUniform(ExpTransform(), -1, 1)
+        >>> d = TransformedUniform(ExpTransform(), -1.0, 1.0)
         >>> d.sample()
         tensor(0.5594)
     """
@@ -305,7 +302,7 @@ class Truncated(Distribution):
         upper: An upper bound :math:`u` (exclusive).
 
     Example:
-        >>> d = Truncated(Normal(0, 1), 1, 2)
+        >>> d = Truncated(Normal(0.0, 1.0), 1.0, 2.0)
         >>> d.sample()
         tensor(1.2573)
     """
@@ -363,7 +360,7 @@ class Sort(Distribution):
         descending: Whether the elements are sorted in descending order or not.
 
     Example:
-        >>> d = Sort(Normal(0, 1), 3)
+        >>> d = Sort(Normal(0.0, 1.0), 3)
         >>> d.event_shape
         torch.Size([3])
         >>> d.sample()
@@ -413,11 +410,7 @@ class Sort(Distribution):
 
         ordered = ordered.all(dim=0)
 
-        return (
-            ordered.log()
-            + self.log_fact
-            + self.base.log_prob(x).sum(dim=0)
-        )
+        return ordered.log() + self.log_fact + self.base.log_prob(x).sum(dim=0)
 
     def sample(self, shape: Size = ()) -> Tensor:
         x = torch.movedim(self.base.sample((self.n,) + shape), 0, -1)
@@ -444,7 +437,7 @@ class TopK(Sort):
         kwargs: Keyword arguments passed to :class:`Sort`.
 
     Example:
-        >>> d = TopK(Normal(0, 1), 2, 3)
+        >>> d = TopK(Normal(0.0, 1.0), 2, 3)
         >>> d.event_shape
         torch.Size([2])
         >>> d.sample()
@@ -486,7 +479,7 @@ class TopK(Sort):
         return (self.n - self.k) * cdf.log() + super().log_prob(x)
 
     def sample(self, shape: Size = ()) -> Tensor:
-        return super().sample(shape)[..., :self.k]
+        return super().sample(shape)[..., : self.k]
 
 
 class Minimum(TopK):
@@ -500,7 +493,7 @@ class Minimum(TopK):
         n: The number of draws :math:`n`.
 
     Example:
-        >>> d = Minimum(Normal(0, 1), 3)
+        >>> d = Minimum(Normal(0.0, 1.0), 3)
         >>> d.event_shape
         torch.Size([])
         >>> d.sample()
@@ -541,7 +534,7 @@ class Maximum(Minimum):
         n: The number of draws :math:`n`.
 
     Example:
-        >>> d = Maximum(Normal(0, 1), 3)
+        >>> d = Maximum(Normal(0.0, 1.0), 3)
         >>> d.event_shape
         torch.Size([])
         >>> d.sample()

@@ -39,6 +39,7 @@ intersphinx_mapping = {
     'torch': ('https://pytorch.org/docs/stable', None),
 }
 
+
 def linkcode_resolve(domain: str, info: dict) -> str:
     module = info.get('module', '')
     fullname = info.get('fullname', '')
@@ -52,7 +53,7 @@ def linkcode_resolve(domain: str, info: dict) -> str:
 
     try:
         file = inspect.getsourcefile(objct)
-        file = file[file.rindex(package):]
+        file = file[file.rindex(package) :]
 
         lines, start = inspect.getsourcelines(objct)
         end = start + len(lines) - 1
@@ -60,6 +61,7 @@ def linkcode_resolve(domain: str, info: dict) -> str:
         return None
     else:
         return f'{repository}/tree/docs/{file}#L{start}-L{end}'
+
 
 napoleon_custom_sections = [
     ('Shapes', 'params_style'),

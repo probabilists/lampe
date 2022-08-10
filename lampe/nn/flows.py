@@ -1,5 +1,17 @@
 r"""Flows and parametric distributions."""
 
+__all__ = [
+    'DistributionModule',
+    'TransformModule',
+    'FlowModule',
+    'MaskedAutoregressiveTransform',
+    'MAF',
+    'NSF',
+    'NeuralAutoregressiveTransform',
+    'NAF',
+]
+
+import abc
 import torch
 import torch.nn as nn
 
@@ -12,16 +24,10 @@ from ..distributions import *
 from ..utils import broadcast
 
 
-__all__ = [
-    'DistributionModule', 'TransformModule', 'FlowModule',
-    'MaskedAutoregressiveTransform', 'MAF', 'NSF',
-    'NeuralAutoregressiveTransform', 'NAF',
-]
-
-
-class DistributionModule(nn.Module):
+class DistributionModule(nn.Module, abc.ABC):
     r"""Abstract distribution module."""
 
+    @abc.abstractmethod
     def forward(y: Tensor = None) -> Distribution:
         r"""
         Arguments:
@@ -31,12 +37,13 @@ class DistributionModule(nn.Module):
             A distribution :math:`p(x | y)`.
         """
 
-        raise NotImplementedError()
+        pass
 
 
-class TransformModule(nn.Module):
+class TransformModule(nn.Module, abc.ABC):
     r"""Abstract transform module."""
 
+    @abc.abstractmethod
     def forward(y: Tensor = None) -> Transform:
         r"""
         Arguments:
@@ -46,15 +53,15 @@ class TransformModule(nn.Module):
             A transform :math:`z = f(x | y)`.
         """
 
-        raise NotImplementedError()
+        pass
 
 
 class FlowModule(DistributionModule):
     r"""Creates a normalizing flow module.
 
     Arguments:
-        transforms: A list of transforms.
-        base: A distribution.
+        transforms: A list of transform modules.
+        base: A distribution module.
     """
 
     def __init__(
@@ -75,6 +82,7 @@ class FlowModule(DistributionModule):
         Returns:
             A normalizing flow :math:`p(x | y)`.
         """
+
         return NormalizingFlow(
             [t(y) for t in self.transforms],
             self.base(y) if y is None else self.base(y).expand(y.shape[:-1]),
@@ -279,7 +287,7 @@ class NSF(MAF):
             features=features,
             context=context,
             univariate=MonotonicRQSTransform,
-            shapes=[(bins,), (bins,), (bins-1,)],
+            shapes=[(bins,), (bins,), (bins - 1,)],
             **kwargs,
         )
 
@@ -320,9 +328,7 @@ class NeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
 
     def univariate(self, signal: Tensor) -> MonotonicTransform:
         def f(x: Tensor) -> Tensor:
-            return self.transform(
-                torch.cat((x[..., None], signal), dim=-1)
-            ).squeeze(-1)
+            return self.transform(torch.cat((x[..., None], signal), dim=-1)).squeeze(-1)
 
         return MonotonicTransform(f)
 
