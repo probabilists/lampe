@@ -187,6 +187,8 @@ class MaskedAutoregressiveTransform(TransformModule):
         self.shapes = list(map(Size, shapes))
         self.sizes = [s.numel() for s in self.shapes]
 
+        self.register_buffer('order', None)
+
         if passes is None:
             passes = features
 
