@@ -181,9 +181,9 @@ class MonotonicRQSTransform(Transform):
             ignore=1,
         )
 
-        x0, x1 = hs.gather(-1, k0_k1).squeeze(-1)
-        y0, y1 = vs.gather(-1, k0_k1).squeeze(-1)
-        d0, d1 = ds.gather(-1, k0_k1).squeeze(-1)
+        x0, x1 = hs.gather(-1, k0_k1).squeeze(dim=-1)
+        y0, y1 = vs.gather(-1, k0_k1).squeeze(dim=-1)
+        d0, d1 = ds.gather(-1, k0_k1).squeeze(dim=-1)
 
         s = (y1 - y0) / (x1 - x0)
 
@@ -191,10 +191,10 @@ class MonotonicRQSTransform(Transform):
 
     @staticmethod
     def searchsorted(seq: Tensor, value: Tensor) -> LongTensor:
-        return torch.sum(seq < value[..., None], dim=-1) - 1
+        return torch.searchsorted(seq, value[..., None]).squeeze(dim=-1)
 
     def _call(self, x: Tensor) -> Tensor:
-        k = self.searchsorted(self.horizontal, x)
+        k = self.searchsorted(self.horizontal, x) - 1
         mask, x0, x1, y0, y1, d0, d1, s = self.bin(k)
 
         z = mask * (x - x0) / (x1 - x0)
@@ -206,7 +206,7 @@ class MonotonicRQSTransform(Transform):
         return torch.where(mask, y, x)
 
     def _inverse(self, y: Tensor) -> Tensor:
-        k = self.searchsorted(self.vertical, y)
+        k = self.searchsorted(self.vertical, y) - 1
         mask, x0, x1, y0, y1, d0, d1, s = self.bin(k)
 
         y_ = mask * (y - y0)
@@ -222,7 +222,7 @@ class MonotonicRQSTransform(Transform):
         return torch.where(mask, x, y)
 
     def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
-        k = self.searchsorted(self.horizontal, x)
+        k = self.searchsorted(self.horizontal, x) - 1
         mask, x0, x1, y0, y1, d0, d1, s = self.bin(k)
 
         z = mask * (x - x0) / (x1 - x0)
