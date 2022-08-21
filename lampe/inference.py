@@ -59,7 +59,7 @@ class NRE(nn.Module):
         x_dim: The dimensionality :math:`L` of the observation space.
         moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
             the moments are used to standardize the parameters.
-        build: The network constructor (e.g. :class:`nn.MLP` or :class:`nn.ResMLP`).
+        build: The network constructor (e.g. :class:`lampe.nn.ResMLP`).
         kwargs: Keyword arguments passed to the constructor.
     """
 
@@ -275,14 +275,14 @@ class NPE(nn.Module):
     techniques.
 
     References:
-        https://wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence
+        https://wikipedia.org/wiki/Kullback-Leibler_divergence
 
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
         moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
             the moments are used to standardize the parameters.
-        build: The flow constructor (e.g. :class:`lampe.nn.flows.MAF`).
+        build: The flow constructor (e.g. :class:`lampe.nn.flows.NSF`).
         kwargs: Keyword arguments passed to the constructor.
     """
 
@@ -483,7 +483,7 @@ class MetropolisHastings(object):
     can be modified by sub-classing :class:`MetropolisHastings`.
 
     Wikipedia:
-        https://wikipedia.org/wiki/Metropolis%E2%80%93Hastings_algorithm
+        https://wikipedia.org/wiki/Metropolis-Hastings_algorithm
 
     Arguments:
         x_0: A batch of initial points :math:`x_0`, with shape :math:`(*, L)`.

@@ -8,6 +8,7 @@ __all__ = [
     'MAF',
     'NSF',
     'NeuralAutoregressiveTransform',
+    'UnconstrainedNeuralAutoregressiveTransform',
     'NAF',
 ]
 
@@ -308,16 +309,16 @@ class NSF(MAF):
 class NeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
     r"""Creates a neural autoregressive transform.
 
-    The monotonic neural network is parametrized by its internal (positive) weights,
-    which are independent of the context and the features. To modulate its behavior,
-    it receives as input a signal that is autoregressively dependent on the features
+    The monotonic neural network is parametrized by its internal positive weights,
+    which are independent of the features and context. To modulate its behavior, it
+    receives as input a signal that is autoregressively dependent on the features
     and context.
 
     Arguments:
         features: The number of features.
         context: The number of context features.
         signal: The number of signal features of the monotonic network.
-        monotone: Keyword arguments passed to :class:`lampe.nn.MonotonicMLP`.
+        network: Keyword arguments passed to :class:`lampe.nn.MonotonicMLP`.
         kwargs: Keyword arguments passed to :class:`MaskedAutoregressiveTransform`.
     """
 
@@ -326,7 +327,7 @@ class NeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
         features: int,
         context: int = 0,
         signal: int = 8,
-        monotone: Dict[str, Any] = {},
+        network: Dict[str, Any] = {},
         **kwargs,
     ):
         super().__init__(
@@ -337,13 +338,64 @@ class NeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
             **kwargs,
         )
 
-        self.transform = MonotonicMLP(1 + signal, 1, **monotone)
+        self.network = MonotonicMLP(1 + signal, 1, **network)
 
-    def univariate(self, signal: Tensor) -> MonotonicTransform:
+    def univariate(self, signal: Tensor) -> Transform:
         def f(x: Tensor) -> Tensor:
-            return self.transform(torch.cat((x[..., None], signal), dim=-1)).squeeze(-1)
+            return self.network(
+                torch.cat(broadcast(x[..., None], signal, ignore=1), dim=-1)
+            ).squeeze(dim=-1)
 
         return MonotonicTransform(f)
+
+
+class UnconstrainedNeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
+    r"""Creates an unconstrained neural autoregressive transform.
+
+    The integrand neural network is parametrized by its internal weights, which are
+    independent of the features and context. To modulate its behavior, it receives as
+    input a signal that is autoregressively dependent on the features and context. The
+    integration constant has the same dependencies as the signal.
+
+    Arguments:
+        features: The number of features.
+        context: The number of context features.
+        signal: The number of signal features of the integrand network.
+        network: Keyword arguments passed to :class:`lampe.nn.MLP`.
+        kwargs: Keyword arguments passed to :class:`MaskedAutoregressiveTransform`.
+    """
+
+    def __init__(
+        self,
+        features: int,
+        context: int = 0,
+        signal: int = 8,
+        network: Dict[str, Any] = {},
+        **kwargs,
+    ):
+        super().__init__(
+            features=features,
+            context=context,
+            univariate=self.univariate,
+            shapes=[(signal,), ()],
+            **kwargs,
+        )
+
+        network.setdefault('activation', 'ELU')
+
+        self.integrand = MLP(1 + signal, 1, **network)
+        self.integrand.add_module(
+            str(len(self.integrand)),
+            nn.Softplus(),
+        )
+
+    def univariate(self, signal: Tensor, constant: Tensor) -> Transform:
+        def f(x: Tensor) -> Tensor:
+            return self.integrand(
+                torch.cat(broadcast(x[..., None], signal, ignore=1), dim=-1)
+            ).squeeze(dim=-1)
+
+        return UnconstrainedMonotonicTransform(f, constant)
 
 
 class NAF(FlowModule):
@@ -354,6 +406,10 @@ class NAF(FlowModule):
         (Huang et al., 2018)
         https://arxiv.org/abs/1804.00779
 
+        Unconstrained Monotonic Neural Networks
+        (Wehenkel et al., 2019)
+        https://arxiv.org/abs/1908.05164
+
     Arguments:
         features: The number of features.
         context: The number of context features.
@@ -361,6 +417,7 @@ class NAF(FlowModule):
         randperm: Whether features are randomly permuted between transforms or not.
             If :py:`False`, features are in ascending (descending) order for even
             (odd) transforms.
+        unconstrained: Whether to use unconstrained or regular monotonic networks.
         kwargs: Keyword arguments passed to :class:`NeuralAutoregressiveTransform`.
     """
 
@@ -370,15 +427,21 @@ class NAF(FlowModule):
         context: int = 0,
         transforms: int = 3,
         randperm: bool = False,
+        unconstrained: bool = False,
         **kwargs,
     ):
+        if unconstrained:
+            build = UnconstrainedNeuralAutoregressiveTransform
+        else:
+            build = NeuralAutoregressiveTransform
+
         orders = [
             torch.arange(features),
             torch.flipud(torch.arange(features)),
         ]
 
         transforms = [
-            NeuralAutoregressiveTransform(
+            build(
                 features=features,
                 context=context,
                 order=torch.randperm(features) if randperm else orders[i % 2],

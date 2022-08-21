@@ -103,6 +103,26 @@ def test_deepto():
     assert a.scale.dtype == torch.double
 
 
+def test_gauss_legendre():
+    # Polynomial
+    f = lambda x: x**5 - x**2
+    F = lambda x: x**6 / 6 - x**3 / 3
+    a, b = 5 * rand(2, 64)
+
+    area = gauss_legendre(f, a, b, n=3)
+
+    assert torch.allclose(F(b) - F(a), area, atol=1e-5, rtol=1e-3)
+
+    # Gradients
+    grad_a, grad_b = torch.autograd.functional.jacobian(
+        lambda a, b: gauss_legendre(f, a, b).sum(),
+        (a, b),
+    )
+
+    assert torch.allclose(-f(a), grad_a)
+    assert torch.allclose(f(b), grad_b)
+
+
 def test_GDStep():
     layer = torch.nn.Linear(3, 3)
     optimizer = torch.optim.SGD(layer.parameters(), lr=1e-3)

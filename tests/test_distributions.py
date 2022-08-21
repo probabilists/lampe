@@ -66,6 +66,7 @@ def test_transforms():
         MonotonicAffineTransform(torch.tensor(42.0), torch.tensor(-0.69)),
         MonotonicRQSTransform(*map(torch.rand, (8, 8, 7))),
         MonotonicTransform(lambda x: x**3),
+        UnconstrainedMonotonicTransform(lambda x: x**2, torch.tensor(0.0)),
     ]
 
     for t in ts:

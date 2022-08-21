@@ -257,7 +257,7 @@ class MaskedLinear(nn.Linear):
 
 
 class MaskedMLP(MLP):
-    r"""Creates a masked multi-layer perceptron.
+    r"""Creates a masked multi-layer perceptron (MaskedMLP).
 
     The resulting MLP is a transformation :math:`y = f(x)` whose Jacobian entries
     :math:`\frac{\partial y_i}{\partial x_j}` are null if :math:`A_{ij} = 0`.
@@ -348,7 +348,7 @@ class TwoWayELU(nn.ELU):
 
 
 class MonotonicMLP(MLP):
-    r"""Creates a monotonic multi-layer perceptron.
+    r"""Creates a monotonic multi-layer perceptron (MonotonicMLP).
 
     The resulting MLP is a transformation :math:`y = f(x)` whose Jacobian entries
     :math:`\frac{\partial y_j}{\partial x_i}` are positive.
