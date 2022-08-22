@@ -208,6 +208,7 @@ class H5Dataset(IterableDataset):
         pairs: Iterable[Tuple[Array, Array]],
         file: Union[str, Path],
         size: int,
+        overwrite: bool = False,
         dtype: np.dtype = np.float32,
         **meta,
     ) -> None:
@@ -220,6 +221,8 @@ class H5Dataset(IterableDataset):
             pairs: An iterable over batched pairs :math:`(\theta, x)`.
             file: An HDF5 filename to store pairs in.
             size: The number of pairs to store.
+            overwrite: Whether to overwrite existing files or not. If :py:`False`
+                and the file already exists, the function raises an error.
             dtype: The data type to store pairs in.
             meta: Metadata to store in the file.
 
@@ -236,7 +239,7 @@ class H5Dataset(IterableDataset):
         file = Path(file)
         file.parent.mkdir(parents=True, exist_ok=True)
 
-        with h5py.File(file, 'w-') as f:
+        with h5py.File(file, 'w' if overwrite else 'w-') as f:
             ## Attributes
             f.attrs.update(meta)
 

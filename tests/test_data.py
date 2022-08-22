@@ -88,6 +88,8 @@ def test_H5Dataset(tmp_path):
     with pytest.raises(FileExistsError):
         H5Dataset.store(pairs, tmp_path / 'data_1.h5', size=4096)
 
+    H5Dataset.store(pairs, tmp_path / 'data_1.h5', overwrite=True, size=4096)
+
     # Load
     for file in tmp_path.glob('data_*.h5'):
         dataset = H5Dataset(file)
