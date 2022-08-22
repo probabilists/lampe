@@ -139,6 +139,60 @@ class NRELoss(nn.Module):
         return l1 + l0
 
 
+class BNRELoss(nn.Module):
+    r"""Creates a module that calculates the loss :math:`l` of a balanced NRE (BNRE)
+    classifier :math:`d_\phi`. Given a batch of :math:`N` pairs
+    :math:`\{ (\theta_i, x_i) \}`, the module returns
+
+    .. math::
+        \begin{align}
+            l & = \frac{1}{N} \sum_{i = 1}^N
+            \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i)) \\
+              & + \gamma \left(1 - \frac{1}{N} \sum_{i = 1}^N
+                d_\phi(\theta_i, x_i) + d_\phi(\theta_{i+1}, x_i)
+            \right)^2
+        \end{align}
+
+    where :math:`\ell(p) = - \log p` is the negative log-likelihood.
+
+    References:
+        Towards Reliable Simulation-Based Inference with Balanced Neural Ratio Estimation
+        (Delaunoy et al., 2022)
+
+    Arguments:
+        estimator: A classifier network :math:`d_\phi(\theta, x)`.
+    """
+
+    def __init__(self, estimator: nn.Module, gamma: float = 42.0):
+        super().__init__()
+
+        self.estimator = estimator
+        self.gamma = gamma
+
+    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
+        r"""
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
+            x: The observation :math:`x`, with shape :math:`(N, L)`.
+
+        Returns:
+            The scalar loss :math:`l`.
+        """
+
+        theta_prime = torch.roll(theta, 1, dims=0)
+
+        log_r, log_r_prime = self.estimator(
+            torch.stack((theta, theta_prime)),
+            x,
+        )
+
+        l1 = -F.logsigmoid(log_r).mean()
+        l0 = -F.logsigmoid(-log_r_prime).mean()
+        lb = (1 - torch.sigmoid(log_r) + torch.sigmoid(log_r_prime)).mean().square()
+
+        return l1 + l0 + self.gamma * lb
+
+
 class AMNRE(NRE):
     r"""Creates an arbitrary marginal neural ratio estimation (AMNRE) classifier
     network.
