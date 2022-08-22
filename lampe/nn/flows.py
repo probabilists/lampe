@@ -84,10 +84,14 @@ class FlowModule(DistributionModule):
             A normalizing flow :math:`p(x | y)`.
         """
 
-        return NormalizingFlow(
-            [t(y) for t in self.transforms],
-            self.base(y) if y is None else self.base(y).expand(y.shape[:-1]),
-        )
+        transforms = [t(y) for t in self.transforms]
+
+        if y is None:
+            base = self.base(y)
+        else:
+            base = self.base(y).expand(y.shape[:-1])
+
+        return NormalizingFlow(transforms, base)
 
 
 class Buffer(nn.Module):
@@ -97,6 +101,7 @@ class Buffer(nn.Module):
         self,
         meta: Callable[..., Any],
         *args,
+        **kwargs,
     ):
         super().__init__()
 
@@ -105,11 +110,13 @@ class Buffer(nn.Module):
         for i, arg in enumerate(args):
             self.register_buffer(f'_{i}', arg)
 
+        self.kwargs = kwargs
+
     def __repr__(self) -> str:
         return repr(self.forward())
 
     def forward(self, y: Tensor = None) -> Any:
-        return self.meta(*self._buffers.values())
+        return self.meta(*self._buffers.values(), **self.kwargs)
 
 
 class Parameters(nn.ParameterList):
@@ -305,6 +312,9 @@ class NSF(MAF):
             **kwargs,
         )
 
+        self.transforms.insert(0, Buffer(SoftclipTransform))
+        self.transforms.append(Buffer(lambda: SoftclipTransform().inv))
+
 
 class NeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
     r"""Creates a neural autoregressive transform.
@@ -449,6 +459,9 @@ class NAF(FlowModule):
             )
             for i in range(transforms)
         ]
+
+        for i in reversed(range(len(transforms))):
+            transforms.insert(i, Buffer(SoftclipTransform))
 
         base = Buffer(DiagNormal, torch.zeros(features), torch.ones(features))
 

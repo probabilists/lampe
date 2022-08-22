@@ -62,6 +62,7 @@ def test_flows():
     ]
 
     for flow in flows:
+        # log_prob
         x, y = randn(256, 3), randn(5)
         log_p = flow(y).log_prob(x)
 
@@ -71,9 +72,25 @@ def test_flows():
         loss = -log_p.mean()
         loss.backward()
 
+        # sample
         for p in flow.parameters():
             assert hasattr(p, 'grad'), flow
 
         z = flow(y).sample((32,))
 
         assert z.shape == (32, 3), flow
+
+        # Invertibility
+        x, y = randn(256, 3), randn(5)
+
+        transforms = [t(y) for t in flow.transforms]
+
+        z = x
+
+        for t in transforms:
+            z = t(z)
+
+        for t in reversed(transforms):
+            z = t.inv(z)
+
+        assert torch.allclose(x, z, atol=1e-5), flow

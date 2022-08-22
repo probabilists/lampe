@@ -15,7 +15,7 @@ def test_distributions():
         BoxUniform(-torch.ones(2), torch.ones(2)),
         TransformedUniform(ExpTransform(), -1.0, 1.0),
         Truncated(Normal(0.0, 1.0), 1.0, 2.0),
-        Sort(Normal(0.0, 1.0), 3),
+        Sort(Normal(0.0, 1.0), 2),
         TopK(Normal(0.0, 1.0), 2, 3),
         Minimum(Normal(0.0, 1.0), 3),
         Maximum(Normal(0.0, 1.0), 3),
@@ -63,17 +63,18 @@ def test_transforms():
     ts = [
         CosTransform(),
         SinTransform(),
+        SoftclipTransform(),
         MonotonicAffineTransform(torch.tensor(42.0), torch.tensor(-0.69)),
         MonotonicRQSTransform(*map(torch.rand, (8, 8, 7))),
         MonotonicTransform(lambda x: x**3),
-        UnconstrainedMonotonicTransform(lambda x: x**2, torch.tensor(0.0)),
+        UnconstrainedMonotonicTransform(lambda x: torch.exp(-x**2) + 1e-2, torch.tensor(0.0)),
     ]
 
     for t in ts:
         if hasattr(t.domain, 'lower_bound'):
             x = torch.linspace(t.domain.lower_bound, t.domain.upper_bound, 256)
         else:
-            x = torch.linspace(-1e1, 1e1, 256)
+            x = torch.linspace(-5.0, 5.0, 256)
 
         y = t(x)
 

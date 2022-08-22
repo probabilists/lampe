@@ -10,6 +10,44 @@ from torch.optim import Optimizer
 from typing import *
 
 
+@torch.no_grad()
+def bisection(
+    f: Callable[[Tensor], Tensor],
+    a: Tensor,
+    b: Tensor,
+    n: int = 16,
+) -> Tensor:
+    r"""Applies the bisection method to find a root :math:`x` of a function
+    :math:`f(x)` between the bounds :math:`a` an :math:`b`.
+
+    Wikipedia:
+        https://wikipedia.org/wiki/Bisection_method
+
+    Arguments:
+        f: A univariate function :math:`f(x)`.
+        a: The bound :math:`a` such that :math:`f(a) \leq 0`.
+        b: The bound :math:`b` such that :math:`0 \leq f(b)`.
+        n: The number of iterations.
+
+    Example:
+        >>> f = torch.cos
+        >>> a = torch.tensor(2.0)
+        >>> b = torch.tensor(1.0)
+        >>> bisection(f, a, b, n=16)
+        tensor(1.5708)
+    """
+
+    for _ in range(n):
+        c = (a + b) / 2
+
+        mask = f(c) < 0
+
+        a = torch.where(mask, c, a)
+        b = torch.where(mask, b, c)
+
+    return (a + b) / 2
+
+
 def broadcast(*tensors: Tensor, ignore: Union[int, List[int]] = 0) -> Tuple[Tensor, ...]:
     r"""Broadcasts tensors together.
 
@@ -77,35 +115,6 @@ def deepto(obj: Any, *args, **kwargs) -> Any:
     return obj
 
 
-@lru_cache(maxsize=None)
-def nodes_legendre(n: int, **kwargs) -> Tuple[Tensor, Tensor]:
-    r"""Returns the nodes and weights for a :math:`n`-point Gauss-Legendre quadrature
-    over the interval :math:`[0, 1]`.
-
-    References:
-        https://numpy.org/doc/stable/reference/generated/numpy.polynomial.legendre.leggauss.html
-
-    Example:
-        >>> nodes, weights = nodes_legendre(3)
-        >>> nodes
-        tensor([0.1127, 0.5000, 0.8873])
-        >>> weights
-        tensor([0.2778, 0.4444, 0.2778])
-    """
-
-    nodes, weights = np.polynomial.legendre.leggauss(n)
-
-    nodes = (nodes + 1) / 2
-    weights = weights / 2
-
-    kwargs.setdefault('dtype', torch.get_default_dtype())
-
-    return (
-        torch.as_tensor(nodes, **kwargs),
-        torch.as_tensor(weights, **kwargs),
-    )
-
-
 class _AttachLimits(torch.autograd.Function):
     r"""Attaches the limits of integration to the computational graph."""
 
@@ -151,7 +160,7 @@ def gauss_legendre(
 
     .. math:: \int_a^b f(x) ~ dx \approx (b - a) \sum_{i = 1}^n w_i f(x_i)
 
-    References:
+    Wikipedia:
         https://wikipedia.org/wiki/Gauss-Legendre_quadrature
 
     Arguments:
@@ -167,7 +176,7 @@ def gauss_legendre(
         tensor(1.4807)
     """
 
-    nodes, weights = nodes_legendre(n, dtype=a.dtype, device=a.device)
+    nodes, weights = leggauss(n, dtype=a.dtype, device=a.device)
     nodes = torch.lerp(
         a[..., None].detach(),
         b[..., None].detach(),
@@ -275,3 +284,34 @@ def gridapply(
     y = torch.cat(y)
 
     return grid.reshape(*bins, -1), y.reshape(*bins, *y.shape[1:])
+
+
+@lru_cache(maxsize=None)
+def leggauss(n: int, **kwargs) -> Tuple[Tensor, Tensor]:
+    r"""Returns the nodes and weights for a :math:`n`-point Gauss-Legendre
+    quadrature over the interval :math:`[0, 1]`.
+
+    See :func:`numpy.polynomial.legendre.leggauss`.
+
+    Arguments:
+        n: The number of points :math:`n`.
+
+    Example:
+        >>> nodes, weights = leggauss(3)
+        >>> nodes
+        tensor([0.1127, 0.5000, 0.8873])
+        >>> weights
+        tensor([0.2778, 0.4444, 0.2778])
+    """
+
+    nodes, weights = np.polynomial.legendre.leggauss(n)
+
+    nodes = (nodes + 1) / 2
+    weights = weights / 2
+
+    kwargs.setdefault('dtype', torch.get_default_dtype())
+
+    return (
+        torch.as_tensor(nodes, **kwargs),
+        torch.as_tensor(weights, **kwargs),
+    )

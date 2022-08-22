@@ -8,7 +8,7 @@ from torch import Tensor, LongTensor
 from torch.distributions import Transform, constraints
 from typing import *
 
-from ..utils import broadcast, gauss_legendre
+from ..utils import bisection, broadcast, gauss_legendre
 
 
 torch.distributions.transforms._InverseTransform.__name__ = 'Inverse'
@@ -84,13 +84,47 @@ class SinTransform(Transform):
         return x.cos().abs().log()
 
 
+class SoftclipTransform(Transform):
+    r"""Creates a transform
+
+    .. math:: f(x) = \frac{x}{1 + \left| \frac{x}{B} \right|}
+
+    that maps :math:`\mathbb{R}` to the inverval :math:`[-B, B]`.
+
+    Arguments:
+        bound: The codomain bound :math:`B`.
+    """
+
+    domain = constraints.real
+    codomain = constraints.real
+    bijective = True
+    sign = +1
+
+    def __init__(self, bound: float = 5.0, **kwargs):
+        super().__init__(**kwargs)
+
+        self.bound = bound
+
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}(bound={self.bound})'
+
+    def _call(self, x: Tensor) -> Tensor:
+        return x / (1 + abs(x / self.bound))
+
+    def _inverse(self, y: Tensor) -> Tensor:
+        return y / (1 - abs(y / self.bound))
+
+    def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
+        return -2 * torch.log1p(abs(x / self.bound))
+
+
 class MonotonicAffineTransform(Transform):
     r"""Creates a transformation :math:`f(x) = x \times \alpha + \beta`.
 
     Arguments:
         shift: The shift term :math:`\beta`, with shape :math:`(*,)`.
         scale: The unconstrained scale factor :math:`\alpha`, with shape :math:`(*,)`.
-        eps: A numerical stability term.
+        slope: The minimum slope of the transformation.
     """
 
     domain = constraints.real
@@ -102,14 +136,14 @@ class MonotonicAffineTransform(Transform):
         self,
         shift: Tensor,
         scale: Tensor,
-        eps: float = 1e-3,
+        slope: float = 1e-3,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         self.shift = shift
-        self.log_scale = scale / (1 + abs(scale / math.log(eps)))
-        self.scale = torch.exp(self.log_scale)
+        self.log_scale = scale / (1 + abs(scale / math.log(slope)))
+        self.scale = self.log_scale.exp()
 
     def _call(self, x: Tensor) -> Tensor:
         return x * self.scale + self.shift
@@ -134,7 +168,7 @@ class MonotonicRQSTransform(Transform):
         heights: The unconstrained bin heights, with shape :math:`(*, K)`.
         derivatives: The unconstrained knot derivatives, with shape :math:`(*, K - 1)`.
         bound: The spline's (co)domain bound :math:`B`.
-        eps: A numerical stability term.
+        slope: The minimum slope of the transformation.
     """
 
     domain = constraints.real
@@ -147,15 +181,19 @@ class MonotonicRQSTransform(Transform):
         widths: Tensor,
         heights: Tensor,
         derivatives: Tensor,
-        bound: float = 10.0,
-        eps: float = 1e-2,
+        bound: float = 5.0,
+        slope: float = 1e-3,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
-        widths = 2 * F.softmax(widths, dim=-1) + eps
-        heights = 2 * F.softmax(heights, dim=-1) + eps
-        derivatives = F.softplus(derivatives) + eps
+        widths = widths / (1 + abs(2 * widths / math.log(slope)))
+        heights = heights / (1 + abs(2 * heights / math.log(slope)))
+        derivatives = derivatives / (1 + abs(derivatives / math.log(slope)))
+
+        widths = 2 * F.softmax(widths, dim=-1)
+        heights = 2 * F.softmax(heights, dim=-1)
+        derivatives = derivatives.exp()
 
         self.horizontal = bound * torch.cumsum(F.pad(widths, (1, 0), value=-1), dim=-1)
         self.vertical = bound * torch.cumsum(F.pad(heights, (1, 0), value=-1), dim=-1)
@@ -234,16 +272,13 @@ class MonotonicRQSTransform(Transform):
             / (s + (d0 + d1 - 2 * s) * z * (1 - z)) ** 2
         )
 
-        return torch.log(jacobian) * mask
+        return mask * jacobian.log()
 
 
 class MonotonicTransform(Transform):
     r"""Creates a transformation from a monotonic univariate function :math:`f(x)`.
 
     The inverse function :math:`f^{-1}` is approximated using the bisection method.
-
-    Wikipedia:
-        https://wikipedia.org/wiki/Bisection_method
 
     Arguments:
         f: A monotonic univariate function :math:`f(x)`.
@@ -259,8 +294,8 @@ class MonotonicTransform(Transform):
     def __init__(
         self,
         f: Callable[[Tensor], Tensor],
-        bound: float = 10.0,
-        eps: float = 1e-5,
+        bound: float = 5.0,
+        eps: float = 1e-6,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -270,50 +305,39 @@ class MonotonicTransform(Transform):
         self.eps = eps
 
     def _call(self, x: Tensor) -> Tensor:
-        return self.f(x / (1 + abs(x / self.bound)))
+        return self.f(x)
 
-    @torch.no_grad()
     def _inverse(self, y: Tensor) -> Tensor:
-        a = torch.full_like(y, -self.bound)
-        b = torch.full_like(y, self.bound)
-
-        for _ in range(math.ceil(math.log2(2 * self.bound / self.eps))):
-            c = (a + b) / 2
-
-            mask = self.f(c) < y
-
-            a = torch.where(mask, c, a)
-            b = torch.where(mask, b, c)
-
-        x = (a + b) / 2
-
-        return x / (1 - abs(x / self.bound))
+        return bisection(
+            f=lambda x: self.f(x) - y,
+            a=torch.full_like(y, -self.bound),
+            b=torch.full_like(y, self.bound),
+            n=math.ceil(math.log2(2 * self.bound / self.eps)),
+        )
 
     def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
         return torch.log(
             torch.autograd.functional.jacobian(
-                func=lambda x: self._call(x).sum(),
+                func=lambda x: self.f(x).sum(),
                 inputs=x,
                 create_graph=True,
             )
         )
 
 
-class UnconstrainedMonotonicTransform(Transform):
-    r"""Creates a monotonic transformation :math:`F(x)` by integrating a positive
-    univariate function :math:`f(x)`.
+class UnconstrainedMonotonicTransform(MonotonicTransform):
+    r"""Creates a monotonic transformation :math:`f(x)` by integrating a positive
+    univariate function :math:`g(x)`.
 
-    .. math:: F(x) = \int_0^x f(t) ~ dt + C
+    .. math:: f(x) = \int_0^x g(t) ~ dt + C
 
     The definite integral is estimated by a :math:`n`-point Gauss-Legendre quadrature.
-    The inverse function :math:`F^{-1}` is approximated using the bisection method.
 
     Arguments:
-        f: A positive univariate function :math:`f(x)`.
+        g: A positive univariate function :math:`g(x)`.
         C: The integration constant :math:`C`.
         n: The number of points :math:`n` for the quadrature.
-        bound: The domain bound :math:`B`.
-        eps: The absolute tolerance for the inverse transformation.
+        kwargs: Keyword arguments passed to :class:`MonotonicTransform`.
     """
 
     domain = constraints.real
@@ -323,55 +347,27 @@ class UnconstrainedMonotonicTransform(Transform):
 
     def __init__(
         self,
-        f: Callable[[Tensor], Tensor],
+        g: Callable[[Tensor], Tensor],
         C: Tensor,
         n: int = 32,
-        bound: float = 10.0,
-        eps: float = 1e-5,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(self.f, **kwargs)
 
-        self.f = f
+        self.g = g
         self.C = C
         self.n = n
-        self.bound = bound
-        self.eps = eps
 
-    def _call(self, x: Tensor) -> Tensor:
-        x = x / (1 + abs(x / self.bound))
-
+    def f(self, x: Tensor) -> Tensor:
         return gauss_legendre(
-            self.f,
-            torch.zeros_like(x),
-            x,
-            self.n,
+            f=self.g,
+            a=torch.zeros_like(x),
+            b=x,
+            n=self.n,
         ) + self.C
 
-    @torch.no_grad()
-    def _inverse(self, y: Tensor) -> Tensor:
-        a = torch.zeros_like(y)
-        b = torch.full_like(y, self.bound)
-        b = torch.where(self.C < y, b, -b)
-        Fa = self.C
-
-        for i in range(math.ceil(math.log2(2 * self.bound / self.eps))):
-            c = (a + b) / 2
-
-            Fc = Fa + gauss_legendre(self.f, a, c, n=max(self.n - i**2, 3))
-            mask = (Fa < y) == (Fc < y)
-
-            a = torch.where(mask, c, a)
-            b = torch.where(mask, b, c)
-            Fa = torch.where(mask, Fc, Fa)
-
-        x = (a + b) / 2
-
-        return x / (1 - abs(x / self.bound))
-
     def log_abs_det_jacobian(self, x: Tensor, y: Tensor) -> Tensor:
-        denominator = 1 + abs(x / self.bound)
-        return self.f(x / denominator).log() - 2 * denominator.log()
+        return self.g(x).log()
 
 
 class AutoregressiveTransform(Transform):

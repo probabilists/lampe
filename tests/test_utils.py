@@ -1,10 +1,23 @@
 r"""Tests for the lampe.utils module."""
 
+import math
 import pytest
 import torch
 
 from lampe.utils import *
 from torch import rand, arange
+
+
+def test_bisection():
+    f = torch.cos
+    a = 2.0 + torch.rand(16, 1)
+    b = torch.rand(8)
+
+    x = bisection(f, a, b, n=21)
+
+    assert x.shape == (16, 8)
+    assert torch.allclose(x, torch.tensor(math.pi / 2), atol=1e-5)
+    assert torch.allclose(f(x), torch.tensor(0.0), atol=1e-5)
 
 
 def test_broadcast():

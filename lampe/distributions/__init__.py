@@ -30,13 +30,13 @@ class NormalizingFlow(TransformedDistribution):
     the inverse transformation :math:`g = f^{-1}`.
 
     References:
+        A Family of Non-parametric Density Estimation Algorithms
+        (Tabak et al., 2013)
+        https://onlinelibrary.wiley.com/doi/abs/10.1002/cpa.21423
+
         Normalizing Flows for Probabilistic Modeling and Inference
         (Papamakarios et al., 2021)
         https://arxiv.org/abs/1912.02762
-
-        Normalizing Flows: An Introduction and Review of Current Methods
-        (Kobyzev et al., 2020)
-        https://arxiv.org/abs/1908.09257
 
     Arguments:
         transforms: A list of transformations :math:`f_i`.
