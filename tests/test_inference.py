@@ -43,6 +43,18 @@ def test_NRELoss():
     assert l.requires_grad
 
 
+def test_BNRELoss():
+    estimator = NRE(3, 5)
+    loss = BNRELoss(estimator)
+
+    theta, x = randn(256, 3), randn(256, 5)
+
+    l = loss(theta, x)
+
+    assert l.shape == ()
+    assert l.requires_grad
+
+
 def test_AMNRE():
     estimator = AMNRE(3, 5)
 
