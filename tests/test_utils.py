@@ -194,14 +194,9 @@ def test_gridapply():
     f = lambda x: x.square().sum(dim=-1)
     lower, upper = torch.zeros(3), torch.ones(3)
 
-    # Grid
-    x = gridapply(lambda x: x, bins=10, bounds=(lower, upper))
+    x, y = gridapply(f, bins=10, bounds=(lower, upper))
 
     assert x.shape == (10, 10, 10, 3)
     assert (lower <= x).all() and (x <= upper).all()
-
-    # Apply
-    y = gridapply(f, bins=10, bounds=(lower, upper))
-
     assert y.shape == (10, 10, 10)
     assert torch.allclose(f(x), y)

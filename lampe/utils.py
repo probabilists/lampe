@@ -228,7 +228,7 @@ def gridapply(
     bins: Union[int, List[int]],
     bounds: Tuple[Tensor, Tensor],
     batch_size: int = 2**12,  # 4096
-) -> Tensor:
+) -> Tuple[Tensor, Tensor]:
     r"""Evaluates a function :math:`f(x)` over a multi-dimensional domain split
     into grid cells. Instead of evaluating the function cell by cell, batches are
     given to the function.
@@ -239,10 +239,15 @@ def gridapply(
         bounds: A tuple of lower and upper domain bounds.
         batch_size: The size of the batches given to the function.
 
+    Returns:
+        The domain grid and the corresponding values.
+
     Example:
         >>> f = lambda x: -(x**2).sum(dim=-1) / 2
         >>> lower, upper = torch.zeros(3), torch.ones(3)
-        >>> y = gridapply(f, bins=10, bounds=(lower, upper))
+        >>> x, y = gridapply(f, bins=10, bounds=(lower, upper))
+        >>> x.shape
+        torch.Size([10, 10, 10, 3])
         >>> y.shape
         torch.Size([10, 10, 10])
     """
@@ -269,4 +274,4 @@ def gridapply(
     y = [f(x) for x in grid.split(batch_size)]
     y = torch.cat(y)
 
-    return y.reshape(*bins, *y.shape[1:])
+    return grid.reshape(*bins, -1), y.reshape(*bins, *y.shape[1:])
