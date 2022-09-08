@@ -207,9 +207,9 @@ def test_gridapply():
     f = lambda x: x.square().sum(dim=-1)
     lower, upper = torch.zeros(3), torch.ones(3)
 
-    x, y = gridapply(f, bins=10, bounds=(lower, upper))
+    x, y = gridapply(f, (lower, upper), bins=8)
 
-    assert x.shape == (10, 10, 10, 3)
+    assert x.shape == (8, 8, 8, 3)
     assert (lower <= x).all() and (x <= upper).all()
-    assert y.shape == (10, 10, 10)
+    assert y.shape == (8, 8, 8)
     assert torch.allclose(f(x), y)

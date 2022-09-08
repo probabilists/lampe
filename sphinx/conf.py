@@ -1,11 +1,7 @@
 # Configuration file for the Sphinx documentation builder
 
-import os
-import sys
 import inspect
 import importlib
-
-sys.path.insert(0, os.path.abspath('..'))
 
 ## Project
 

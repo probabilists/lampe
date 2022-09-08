@@ -6,6 +6,6 @@ API
     :includehidden:
     :maxdepth: 2
 
-    nn/index.rst
     distributions/index.rst
+    nn/index.rst
     *

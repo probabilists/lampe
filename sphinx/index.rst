@@ -1,13 +1,15 @@
-.. image:: static/banner.svg
+.. image:: images/banner.svg
    :class: only-light
 
-.. image:: static/banner_dark.svg
+.. image:: images/banner_dark.svg
    :class: only-dark
 
 LAMPE
 =====
 
 :mod:`lampe` is a simulation-based inference (SBI) package that focuses on amortized estimation of posterior distributions, without relying on explicit likelihood functions; hence the name *Likelihood-free AMortized Posterior Estimation* (LAMPE). The package provides `PyTorch <https://pytorch.org>`_ implementations of modern amortized simulation-based inference algorithms like neural ratio estimation (NRE), neural posterior estimation (NPE) and more. Similar to PyTorch, the philosophy of LAMPE is to avoid obfuscation and expose all components, from network architecture to optimizer, to the user such that they are free to modify or replace anything they like.
+
+As part of the inference pipeline, LAMPE provides components to efficiently `store and load data <api/data.html>`_ from disk, `diagnose predictions <api/diagnostics.html>`_ and `display results <api/plots.html>`_ graphically. The package also implements `normalizing flows <api/nn/flows.html>`_ from scratch in a way that is both easy to understand and extend.
 
 Installation
 ------------
@@ -60,9 +62,9 @@ Automatic Posterior Transformation for Likelihood-Free Inference
 (Greenberg et al., 2019)
 https://arxiv.org/abs/1905.07488
 
-Arbitrary Marginal Neural Ratio Estimation for Simulation-based Inference
-(Rozet et al., 2021)
-https://arxiv.org/abs/2110.00449
+Normalizing Flows for Probabilistic Modeling and Inference
+(Papamakarios et al., 2021)
+https://arxiv.org/abs/1912.02762
 
 .. toctree::
     :caption: lampe

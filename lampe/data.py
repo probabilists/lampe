@@ -229,7 +229,7 @@ class H5Dataset(IterableDataset):
         Example:
             >>> loader = JointLoader(prior, simulator, batch_size=16)
             >>> H5Dataset.store(loader, 'data.h5', 4096)
-            100%|██████████| 4096/4096 [01:35<00:00, 42.69sample/s]
+            100%|██████████| 4096/4096 [01:35<00:00, 42.69pair/s]
         """
 
         # Pairs
@@ -250,7 +250,7 @@ class H5Dataset(IterableDataset):
             f.create_dataset('x', (size,) + x.shape[1:], dtype=dtype)
 
             ## Store
-            with tqdm(total=size, unit='sample') as tq:
+            with tqdm(total=size, unit='pair') as tq:
                 i = 0
 
                 while True:

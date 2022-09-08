@@ -322,10 +322,17 @@ class NPE(nn.Module):
 
     The principle of neural posterior estimation is to train a parametric conditional
     distribution :math:`p_\phi(\theta | x)` to approximate the posterior distribution
-    :math:`p(\theta | x)`. The optimization problem is to minimize the Kullback-Leibler
-    (KL) divergence between the two distributions or, equivalently,
+    :math:`p(\theta | x)`. The optimization problem is to minimize the expected
+    Kullback-Leibler (KL) divergence between the two distributions for all observations
+    :math:`x \sim p(x)`, that is
 
-    .. math:: \arg\min_\phi \mathbb{E}_{p(\theta, x)} \big[ -\log p_\phi(\theta | x) \big] .
+    .. math::
+        \arg\min_\phi & ~ \mathbb{E}_{p(x)}
+        \Big[ \text{KL} \big( p(\theta|x) \parallel p_\phi(\theta | x) \big) \Big] \\
+        = \arg\min_\phi & ~ \mathbb{E}_{p(x)} \, \mathbb{E}_{p(\theta | x)}
+        \left[ \log \frac{p(\theta | x)}{p_\phi(\theta | x)} \right] \\
+        = \arg\min_\phi & ~ \mathbb{E}_{p(\theta, x)}
+            \big[ - \log p_\phi(\theta | x) \big] .
 
     Normalizing flows are typically used for :math:`p_\phi(\theta | x)` as they are
     differentiable parametric distributions enabling gradient-based optimization

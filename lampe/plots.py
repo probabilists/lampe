@@ -1,6 +1,6 @@
 r"""Plotting helpers."""
 
-__all__ = ['nice_rc', 'corner', 'mark_point', 'rank_ecdf']
+__all__ = ['nice_rc', 'corner', 'mark_point', 'coverage_plot']
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -25,14 +25,12 @@ def nice_rc(latex: bool = False) -> Dict[str, Any]:
     rc = {
         'axes.axisbelow': True,
         'axes.linewidth': 0.8,
-        'figure.autolayout': True,
         'figure.dpi': 150,
         'figure.figsize': (6.4, 4.8),
         'font.size': 12.0,
         'legend.fontsize': 'x-small',
         'lines.linewidth': 1.0,
         'lines.markersize': 3.0,
-        'savefig.bbox': 'tight',
         'savefig.transparent': True,
         'xtick.labelsize': 'x-small',
         'xtick.major.width': 0.8,
@@ -40,7 +38,7 @@ def nice_rc(latex: bool = False) -> Dict[str, Any]:
         'ytick.major.width': 0.8,
     }
 
-    if mpl.checkdep_usetex(latex):
+    if latex:
         rc.update({
             'font.family': ['serif'],
             'font.serif': ['Computer Modern'],
@@ -136,8 +134,8 @@ def credible_levels(hist: Array, creds: Array) -> Array:
 
 def corner(
     data: Array,
-    bins: Union[int, List[int]] = 100,
-    bounds: Tuple[Array, Array] = None,
+    domain: Tuple[Array, Array] = None,
+    bins: Union[int, List[int]] = 64,
     creds: Array = [0.6827, 0.9545, 0.9973],
     color: Union[str, tuple] = None,
     alpha: Tuple[float, float] = (0.0, 0.5),
@@ -153,8 +151,8 @@ def corner(
 
     Arguments:
         data: Multi-dimensional data, either as a table or as a matrix of histograms.
+        domain: A pair of lower and upper domain bounds. If :py:`None`, inferred from data.
         bins: The number(s) of bins per dimension.
-        bounds: A tuple of lower and upper domain bounds. If :py:`None`, inferred from data.
         creds: The region credibilities (in :math:`[0, 1]`) to delimit.
         color: A color for histograms.
         alpha: A transparency range.
@@ -170,9 +168,9 @@ def corner(
     Example:
         >>> data = np.random.randn(2**16, 3)
         >>> labels = [r'$\alpha$', r'$\beta$', r'$\gamma$']
-        >>> figure = corner(data, bins=42, labels=labels, figsize=(4.8, 4.8))
+        >>> figure = corner(data, bins=32, labels=labels, figsize=(4.8, 4.8))
 
-    .. image:: ../static/images/corner.png
+    .. image:: ../images/corner.png
         :align: center
         :width: 600
     """
@@ -188,10 +186,10 @@ def corner(
         if type(bins) is int:
             bins = [bins] * D
 
-        if bounds is None:
+        if domain is None:
             lower, upper = data.min(axis=0), data.max(axis=0)
         else:
-            lower, upper = map(np.asarray, bounds)
+            lower, upper = map(np.asarray, domain)
 
         bins = [
             np.histogram_bin_edges(data, bins[i], range=(lower[i], upper[i]))
@@ -220,10 +218,10 @@ def corner(
     else:
         D = len(data)
 
-        if bounds is None:
+        if domain is None:
             lower, upper = np.zeros(D), np.ones(D)
         else:
-            lower, upper = map(np.asarray, bounds)
+            lower, upper = map(np.asarray, domain)
 
         bins = [None] * D
         for i in range(D):
@@ -251,30 +249,31 @@ def corner(
 
     # Legend
 
-    ## Color
-    lines = axes[0, -1].plot([], [], color=color, label=legend)
-    color = lines[-1].get_color()
-
-    handles, texts = axes[0, -1].get_legend_handles_labels()
-
     ## Quantiles
     creds = np.sort(np.asarray(creds))[::-1]
     creds = np.append(creds, 0)
 
-    cmap = LinearAlphaColormap('black', levels=creds, alpha=alpha)
+    if new:
+        cmap = LinearAlphaColormap('black', levels=creds, alpha=alpha)
 
-    levels = (creds - creds.min()) / (creds.max() - creds.min())
-    levels = (levels[:-1] + levels[1:]) / 2
+        levels = (creds - creds.min()) / (creds.max() - creds.min())
+        levels = (levels[:-1] + levels[1:]) / 2
 
-    for c, l in zip(creds[:-1], levels):
-        handles.append(mpl.patches.Patch(color=cmap(l), linewidth=0))
-        texts.append(r'${:.1f}\,\%$'.format(c * 100))
+        for c, l in zip(creds[:-1], levels):
+            axes[0, -1].plot(
+                [],
+                [],
+                color=cmap(l),
+                linewidth=6,
+                solid_capstyle='butt',
+                label=r'${:.1f}\,\%$'.format(c * 100),
+            )
 
-    ## Update
-    if not new:
-        figure.legends.clear()
+    ## Color
+    lines = axes[0, -1].plot([], [], color=color, solid_capstyle='butt', label=legend)
+    color = lines[-1].get_color()
 
-    figure.legend(handles, texts, loc='upper right', bbox_to_anchor=(0.975, 0.975), frameon=False)
+    axes[0, -1].legend(loc='upper right', frameon=False)
 
     # Plot
     for i in range(D):
@@ -352,6 +351,7 @@ def corner(
             ax.label_outer()
 
     figure.align_labels()
+    figure.tight_layout(pad=0.5)
 
     return figure
 
@@ -371,7 +371,7 @@ def mark_point(
     Example:
         >>> mark_point(figure, [0.5, 0.3, -0.7], color='black')
 
-    .. image:: ../static/images/corner_marked.png
+    .. image:: ../images/corner_marked.png
         :align: center
         :width: 600
     """
@@ -407,34 +407,37 @@ def mark_point(
                 )
 
 
-def rank_ecdf(
-    ranks: Array,
+def coverage_plot(
+    levels: Array,
+    coverages: Array,
     color: Union[str, tuple] = None,
     legend: str = None,
     figure: mpl.figure.Figure = None,
     **kwargs,
 ) -> mpl.figure.Figure:
-    r"""Draws the empirical cumulative distribution function (ECDF) of a rank
-    statistic :math:`r \in [0, 1]`.
+    r"""Plots the expected coverage at various credible levels.
 
     Arguments:
-        ranks: Samples of the rank statistic.
-        color: A color.
+        levels: A vector of increasing credible levels.
+        coverages: A vector of corresponding expected coverages.
         legend: A legend.
-        figure: A ECDF plot over which to draw the new one.
+        figure: Another coverage plot over which to draw the new one.
         kwargs: Keyword arguments passed to :func:`matplotlib.pyplot.subplots`.
 
     Returns:
-        The figure instance for the ECDF plot.
+        The figure instance for the coverage plot.
 
     Example:
-        >>> ranks = np.random.rand(1024) ** 2
-        >>> figure = rank_ecdf(ranks)
+        >>> levels = np.linspace(0, 1, 512) ** 2
+        >>> coverages = np.linspace(0, 1, 512)
+        >>> figure = coverage_plot(levels, coverages)
 
-    .. image:: ../static/images/rank_ecdf.png
+    .. image:: ../images/coverage.png
         :align: center
         :width: 400
     """
+
+    levels, coverages = np.asarray(levels), np.asarray(coverages)
 
     # Figure
     if figure is None:
@@ -443,25 +446,22 @@ def rank_ecdf(
         figure, ax = plt.subplots(**kwargs)
         new = True
     else:
-        ax = figure.axes.squeeze()
+        ax = figure.axes[0]
         new = False
-
-    # ECDF
-    ranks = np.sort(np.asarray(ranks))
-    ranks = np.hstack([0, ranks, 1])
-    ecdf = np.linspace(0, 1, len(ranks))
 
     # Plot
     if new:
         ax.plot([0, 1], [0, 1], color='k', linestyle='--')
 
-    ax.plot(ranks, ecdf, color=color, label=legend)
+    ax.plot(levels, coverages, color=color, label=legend)
 
     ax.grid()
-    ax.set_xlabel(r'$r$')
-    ax.set_ylabel(r'$\mathrm{ECDF}(r)$')
+    ax.set_xlabel(r'Credible level')
+    ax.set_ylabel(r'Expected coverage')
 
     if legend is not None:
         ax.legend(loc='upper left')
+
+    figure.tight_layout(pad=0.5)
 
     return figure

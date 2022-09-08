@@ -20,7 +20,7 @@ If you like the project and wish to contribute, you can start by looking at issu
 
 ### Code conventions
 
-We mostly follow the [PEP 8](https://peps.python.org/pep-0008/) style guide for Python code. It is strongly recommended that you format your code with the opinionated [Black](https://github.com/psf/black) formatter. For example, if you created or modified a file `path/to/filename.py`, you can reformat it with
+We mostly follow the [PEP 8](https://peps.python.org/pep-0008/) style guide for Python code. It is recommended that you format your code with the opinionated [Black](https://github.com/psf/black) formatter. For example, if you created or modified a file `path/to/filename.py`, you can reformat it with
 
 ```
 black -S path/to/filename.py
@@ -35,7 +35,7 @@ Additionally, please follow these rules:
 
 ### Testing
 
-We use [pytest](https://docs.pytest.org) to test our code base. If your contribution introduces new components, you should write new tests to make sure your code doesn't crash under normal circumstances. After installing `pytest`, add the tests to the [tests/](tests)  directory and run them with
+We use [pytest](https://docs.pytest.org) to test our code base. If your contribution introduces new components, you should write new tests to make sure your code doesn't crash under normal circumstances. After installing `pytest`, add the tests to the [tests/](tests) directory and run them with
 
 ```
 pytest tests
@@ -45,12 +45,11 @@ It is also recommended to ensure your code works as expected within toy experime
 
 ### Documentation
 
-The package's [documentation](https://francois-rozet.github.io/lampe) is automatically built by [Sphinx](https://www.sphinx-doc.org) using type hints and docstrings. All classes and functions
-accessible to the user should be documented with [Google style](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings) docstrings. After installing the documentation dependencies (`sphinx` and `furo`), you can build it with
+The package's [documentation](https://francois-rozet.github.io/lampe) is automatically built by [Sphinx](https://www.sphinx-doc.org) using type hints and docstrings. All classes and functions accessible to the user should be documented with [Google style](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings) docstrings. After installing the documentation dependencies (`sphinx` and `furo`), you can build it with
 
 ```
 cd sphinx
-sphinx-build -b html . ../docs
+bash build.sh
 ```
 
 ### Commits

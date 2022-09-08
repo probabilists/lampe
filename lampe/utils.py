@@ -234,9 +234,9 @@ class GDStep(object):
 
 def gridapply(
     f: Callable[[Tensor], Tensor],
-    bins: Union[int, List[int]],
-    bounds: Tuple[Tensor, Tensor],
-    batch_size: int = 2**12,  # 4096
+    domain: Tuple[Tensor, Tensor],
+    bins: Union[int, List[int]] = 128,
+    batch_size: int = 4096,
 ) -> Tuple[Tensor, Tensor]:
     r"""Evaluates a function :math:`f(x)` over a multi-dimensional domain split
     into grid cells. Instead of evaluating the function cell by cell, batches are
@@ -244,8 +244,8 @@ def gridapply(
 
     Arguments:
         f: A function :math:`f(x)`.
+        domain: A pair of lower and upper domain bounds.
         bins: The number(s) of bins per dimension.
-        bounds: A tuple of lower and upper domain bounds.
         batch_size: The size of the batches given to the function.
 
     Returns:
@@ -254,14 +254,14 @@ def gridapply(
     Example:
         >>> f = lambda x: -(x**2).sum(dim=-1) / 2
         >>> lower, upper = torch.zeros(3), torch.ones(3)
-        >>> x, y = gridapply(f, bins=10, bounds=(lower, upper))
+        >>> x, y = gridapply(f, (lower, upper), bins=8)
         >>> x.shape
-        torch.Size([10, 10, 10, 3])
+        torch.Size([8, 8, 8, 3])
         >>> y.shape
-        torch.Size([10, 10, 10])
+        torch.Size([8, 8, 8])
     """
 
-    lower, upper = bounds
+    lower, upper = domain
 
     # Shape
     dims = len(lower)
@@ -270,14 +270,14 @@ def gridapply(
         bins = [bins] * dims
 
     # Create grid
-    domains = []
+    coordinates = []
 
     for l, u, b in zip(lower, upper, bins):
         step = (u - l) / b
-        dom = torch.linspace(l, u - step, b).to(step) + step / 2
-        domains.append(dom)
+        ticks = torch.linspace(l, u - step, b).to(step) + step / 2
+        coordinates.append(ticks)
 
-    grid = torch.cartesian_prod(*domains)
+    grid = torch.cartesian_prod(*coordinates)
 
     # Evaluate f(x) on grid
     y = [f(x) for x in grid.split(batch_size)]
