@@ -1,9 +1,6 @@
-r"""Flows and parametric distributions."""
+r"""Flows and parametric transformations."""
 
 __all__ = [
-    'DistributionModule',
-    'TransformModule',
-    'FlowModule',
     'MaskedAutoregressiveTransform',
     'MAF',
     'NSF',
@@ -177,6 +174,28 @@ class MaskedAutoregressiveTransform(TransformModule):
         univariate: A univariate transformation constructor.
         shapes: The shapes of the univariate transformation parameters.
         kwargs: Keyword arguments passed to :class:`lampe.nn.MaskedMLP`.
+
+    Examples:
+        >>> t = MaskedAutoregressiveTransform(3, 4)
+        >>> t
+        MaskedAutoregressiveTransform(
+          (base): MonotonicAffineTransform()
+          (order): [0, 1, 2]
+          (params): MaskedMLP(
+            (0): MaskedLinear(in_features=7, out_features=64, bias=True)
+            (1): ReLU()
+            (2): MaskedLinear(in_features=64, out_features=64, bias=True)
+            (3): ReLU()
+            (4): MaskedLinear(in_features=64, out_features=6, bias=True)
+          )
+        )
+        >>> x = torch.randn(3)
+        >>> x
+        tensor([-0.9485,  1.5290,  0.2018])
+        >>> y = torch.randn(4)
+        >>> z = t(y)(x)
+        >>> t(y).inv(z)
+        tensor([-0.9485,  1.5290,  0.2018])
     """
 
     def __init__(
@@ -252,6 +271,54 @@ class MAF(FlowModule):
             If :py:`False`, features are in ascending (descending) order for even
             (odd) transforms.
         kwargs: Keyword arguments passed to :class:`MaskedAutoregressiveTransform`.
+
+    Examples:
+        >>> flow = MAF(3, 4, transforms=3)
+        >>> flow
+        MAF(
+          (transforms): ModuleList(
+            (0): MaskedAutoregressiveTransform(
+              (base): MonotonicAffineTransform()
+              (order): [0, 1, 2]
+              (params): MaskedMLP(
+                (0): MaskedLinear(in_features=7, out_features=64, bias=True)
+                (1): ReLU()
+                (2): MaskedLinear(in_features=64, out_features=64, bias=True)
+                (3): ReLU()
+                (4): MaskedLinear(in_features=64, out_features=6, bias=True)
+              )
+            )
+            (1): MaskedAutoregressiveTransform(
+              (base): MonotonicAffineTransform()
+              (order): [2, 1, 0]
+              (params): MaskedMLP(
+                (0): MaskedLinear(in_features=7, out_features=64, bias=True)
+                (1): ReLU()
+                (2): MaskedLinear(in_features=64, out_features=64, bias=True)
+                (3): ReLU()
+                (4): MaskedLinear(in_features=64, out_features=6, bias=True)
+              )
+            )
+            (2): MaskedAutoregressiveTransform(
+              (base): MonotonicAffineTransform()
+              (order): [0, 1, 2]
+              (params): MaskedMLP(
+                (0): MaskedLinear(in_features=7, out_features=64, bias=True)
+                (1): ReLU()
+                (2): MaskedLinear(in_features=64, out_features=64, bias=True)
+                (3): ReLU()
+                (4): MaskedLinear(in_features=64, out_features=6, bias=True)
+              )
+            )
+          )
+          (base): DiagNormal(loc: torch.Size([3]), scale: torch.Size([3]))
+        )
+        >>> y = torch.randn(4)
+        >>> x = flow(y).sample()
+        >>> x
+        tensor([-1.7154, -0.4401,  0.7505])
+        >>> flow(y).log_prob(x)
+        tensor(-4.4630, grad_fn=<AddBackward0>)
     """
 
     def __init__(
@@ -330,6 +397,35 @@ class NeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
         signal: The number of signal features of the monotonic network.
         network: Keyword arguments passed to :class:`lampe.nn.MonotonicMLP`.
         kwargs: Keyword arguments passed to :class:`MaskedAutoregressiveTransform`.
+
+    Examples:
+        >>> t = NeuralAutoregressiveTransform(3, 4)
+        >>> t
+        NeuralAutoregressiveTransform(
+          (base): MonotonicTransform()
+          (order): [0, 1, 2]
+          (params): MaskedMLP(
+            (0): MaskedLinear(in_features=7, out_features=64, bias=True)
+            (1): ReLU()
+            (2): MaskedLinear(in_features=64, out_features=64, bias=True)
+            (3): ReLU()
+            (4): MaskedLinear(in_features=64, out_features=24, bias=True)
+          )
+          (network): MonotonicMLP(
+            (0): MonotonicLinear(in_features=9, out_features=64, bias=True)
+            (1): TwoWayELU(alpha=1.0)
+            (2): MonotonicLinear(in_features=64, out_features=64, bias=True)
+            (3): TwoWayELU(alpha=1.0)
+            (4): MonotonicLinear(in_features=64, out_features=1, bias=True)
+          )
+        )
+        >>> x = torch.randn(3)
+        >>> x
+        tensor([-2.3267,  1.4581, -1.6776])
+        >>> y = torch.randn(4)
+        >>> z = t(y)(x)
+        >>> t(y).inv(z)
+        tensor([-2.3267,  1.4581, -1.6776])
     """
 
     def __init__(
@@ -373,6 +469,36 @@ class UnconstrainedNeuralAutoregressiveTransform(MaskedAutoregressiveTransform):
         signal: The number of signal features of the integrand network.
         network: Keyword arguments passed to :class:`lampe.nn.MLP`.
         kwargs: Keyword arguments passed to :class:`MaskedAutoregressiveTransform`.
+
+    Examples:
+        >>> t = UnconstrainedNeuralAutoregressiveTransform(3, 4)
+        >>> t
+        UnconstrainedNeuralAutoregressiveTransform(
+          (base): UnconstrainedMonotonicTransform()
+          (order): [0, 1, 2]
+          (params): MaskedMLP(
+            (0): MaskedLinear(in_features=7, out_features=64, bias=True)
+            (1): ReLU()
+            (2): MaskedLinear(in_features=64, out_features=64, bias=True)
+            (3): ReLU()
+            (4): MaskedLinear(in_features=64, out_features=27, bias=True)
+          )
+          (integrand): MLP(
+            (0): Linear(in_features=9, out_features=64, bias=True)
+            (1): ELU(alpha=1.0)
+            (2): Linear(in_features=64, out_features=64, bias=True)
+            (3): ELU(alpha=1.0)
+            (4): Linear(in_features=64, out_features=1, bias=True)
+            (5): Softplus(beta=1, threshold=20)
+          )
+        )
+        >>> x = torch.randn(3)
+        >>> x
+        tensor([-0.0103, -1.0871, -0.0667])
+        >>> y = torch.randn(4)
+        >>> z = t(y)(x)
+        >>> t(y).inv(z)
+        tensor([-0.0103, -1.0871, -0.0667])
     """
 
     def __init__(

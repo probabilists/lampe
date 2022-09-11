@@ -18,7 +18,7 @@ class PermutationTransform(Transform):
     r"""Creates a transformation that permutes the elements.
 
     Arguments:
-        order: The permuatation order, with shape :math:`(*, D)`.
+        order: The permutation order, with shape :math:`(*, D)`.
     """
 
     domain = constraints.real_vector
@@ -371,10 +371,10 @@ class UnconstrainedMonotonicTransform(MonotonicTransform):
 
 
 class AutoregressiveTransform(Transform):
-    r"""Tranform via an autoregressive mapping.
+    r"""Transform via an autoregressive mapping.
 
     Arguments:
-        meta: A meta function :math:`g(x) = f`.
+        meta: A meta function which returns a transformation :math:`f`.
         passes: The number of passes for the inverse transformation.
     """
 
@@ -396,6 +396,7 @@ class AutoregressiveTransform(Transform):
     def _call(self, x: Tensor) -> Tensor:
         return self.meta(x)(x)
 
+    @torch.no_grad()
     def _inverse(self, y: Tensor) -> Tensor:
         x = torch.zeros_like(y)
         for _ in range(self.passes):
