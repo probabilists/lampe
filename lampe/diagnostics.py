@@ -10,7 +10,6 @@ from typing import *
 from .utils import gridapply
 
 
-@torch.no_grad()
 def expected_coverage_mc(
     posterior: Callable[[Tensor], Distribution],
     pairs: Iterable[Tuple[Tensor, Tensor]],
@@ -60,14 +59,15 @@ def expected_coverage_mc(
 
     ranks = []
 
-    for theta, x in tqdm(pairs, unit='pair'):
-        dist = posterior(x)
+    with torch.no_grad():
+        for theta, x in tqdm(pairs, unit='pair'):
+            dist = posterior(x)
 
-        samples = dist.sample((n,))
-        mask = dist.log_prob(theta) < dist.log_prob(samples)
-        rank = mask.sum() / mask.numel()
+            samples = dist.sample((n,))
+            mask = dist.log_prob(theta) < dist.log_prob(samples)
+            rank = mask.sum() / mask.numel()
 
-        ranks.append(rank)
+            ranks.append(rank)
 
     ranks = torch.stack(ranks).cpu()
     ranks = torch.cat((ranks, torch.tensor([0.0, 1.0])))
@@ -78,7 +78,6 @@ def expected_coverage_mc(
     )
 
 
-@torch.no_grad()
 def expected_coverage_ni(
     posterior: Callable[[Tensor, Tensor], Tensor],
     pairs: Iterable[Tuple[Tensor, Tensor]],
@@ -113,12 +112,13 @@ def expected_coverage_ni(
 
     ranks = []
 
-    for theta, x in tqdm(pairs, unit='pair'):
-        _, log_probs = gridapply(lambda theta: posterior(theta, x), domain, **kwargs)
-        mask = posterior(theta, x) < log_probs
-        rank = log_probs[mask].logsumexp(dim=0) - log_probs.flatten().logsumexp(dim=0)
+    with torch.no_grad():
+        for theta, x in tqdm(pairs, unit='pair'):
+            _, log_probs = gridapply(lambda theta: posterior(theta, x), domain, **kwargs)
+            mask = posterior(theta, x) < log_probs
+            rank = log_probs[mask].logsumexp(dim=0) - log_probs.flatten().logsumexp(dim=0)
 
-        ranks.append(rank.exp())
+            ranks.append(rank.exp())
 
     ranks = torch.stack(ranks).cpu()
     ranks = torch.cat((ranks, torch.tensor([0.0, 1.0])))
