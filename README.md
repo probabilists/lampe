@@ -1,4 +1,4 @@
-<p align="center"><img src="https://raw.githubusercontent.com/francois-rozet/lampe/master/sphinx/static/banner.svg" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/francois-rozet/lampe/master/sphinx/images/banner.svg" width="100%"></p>
 
 # LAMPE
 
