@@ -1,8 +1,7 @@
 ---
 name: "🐛 Bug report"
-about: "Report a bug to help LAMPE improve"
+about: "Report an issue that seems like a bug"
 labels: bug
-
 ---
 
 ### Description
@@ -14,7 +13,7 @@ A clear description of what the bug is.
 A minimal working example demonstrating the current behavior.
 
 ```python
-from lampe.module import component
+from lampe import component
 ...
 y = component(x)  # bug happens
 ```

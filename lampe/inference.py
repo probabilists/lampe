@@ -8,10 +8,12 @@ from itertools import islice
 from torch import Tensor, BoolTensor, Size
 from typing import *
 
-from .distributions import Distribution, DiagNormal, AffineTransform
-from .nn import Affine, MLP
-from .nn.flows import Buffer, FlowModule, MAF
-from .utils import broadcast
+from zuko.distributions import Distribution, DiagNormal
+from zuko.flows import FlowModule, MAF, Unconditional
+from zuko.transforms import AffineTransform
+from zuko.utils import broadcast
+
+from .nn import MLP, Affine
 
 
 class NRE(nn.Module):
@@ -46,13 +48,11 @@ class NRE(nn.Module):
     :math:`\text{logit}(d_\phi(\theta, x)) = \log r_\phi(\theta, x)`.
 
     References:
-        Approximating Likelihood Ratios with Calibrated Discriminative Classifiers
-        (Cranmer et al., 2015)
-        https://arxiv.org/abs/1506.02169
+        | Approximating Likelihood Ratios with Calibrated Discriminative Classifiers (Cranmer et al., 2015)
+        | https://arxiv.org/abs/1506.02169
 
-        Likelihood-free MCMC with Amortized Approximate Ratio Estimators
-        (Hermans et al., 2019)
-        https://arxiv.org/abs/1903.04057
+        | Likelihood-free MCMC with Amortized Approximate Ratio Estimators (Hermans et al., 2019)
+        | https://arxiv.org/abs/1903.04057
 
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
@@ -74,11 +74,11 @@ class NRE(nn.Module):
         super().__init__()
 
         if moments is None:
-            self.standardize = nn.Identity()
+            mu, sigma = torch.zeros(theta_dim), torch.ones(theta_dim)
         else:
             mu, sigma = moments
-            self.standardize = Affine(-mu / sigma, 1 / sigma)
 
+        self.standardize = Affine(-mu / sigma, 1 / sigma)
         self.net = build(theta_dim + x_dim, 1, **kwargs)
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
@@ -156,9 +156,8 @@ class BNRELoss(nn.Module):
     where :math:`\ell(p) = - \log p` is the negative log-likelihood.
 
     References:
-        Towards Reliable Simulation-Based Inference with Balanced Neural Ratio Estimation
-        (Delaunoy et al., 2022)
-        https://arxiv.org/abs/2208.13624
+        | Towards Reliable Simulation-Based Inference with Balanced Neural Ratio Estimation (Delaunoy et al., 2022)
+        | https://arxiv.org/abs/2208.13624
 
     Arguments:
         estimator: A classifier network :math:`d_\phi(\theta, x)`.
@@ -223,9 +222,8 @@ class AMNRE(NRE):
     :math:`\log r(\theta_b, x)`.
 
     References:
-        Arbitrary Marginal Neural Ratio Estimation for Simulation-based Inference
-        (Rozet et al., 2021)
-        https://arxiv.org/abs/2110.00449
+        | Arbitrary Marginal Neural Ratio Estimation for Simulation-based Inference (Rozet et al., 2021)
+        | https://arxiv.org/abs/2110.00449
 
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
@@ -241,7 +239,7 @@ class AMNRE(NRE):
         *args,
         **kwargs,
     ):
-        super().__init__(theta_dim * 2, x_dim, *args, **kwargs)
+        super().__init__(theta_dim, x_dim + theta_dim, *args, **kwargs)
 
     def forward(self, theta: Tensor, x: Tensor, b: BoolTensor) -> Tensor:
         r"""
@@ -338,7 +336,7 @@ class NPE(nn.Module):
     differentiable parametric distributions enabling gradient-based optimization
     techniques.
 
-    References:
+    Wikipedia:
         https://wikipedia.org/wiki/Kullback-Leibler_divergence
 
     Arguments:
@@ -346,7 +344,7 @@ class NPE(nn.Module):
         x_dim: The dimensionality :math:`L` of the observation space.
         moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
             the moments are used to standardize the parameters.
-        build: The flow constructor (e.g. :class:`lampe.nn.flows.NSF`).
+        build: The flow constructor (e.g. :class:`zuko.flows.NSF`).
         kwargs: Keyword arguments passed to the constructor.
     """
 
@@ -360,11 +358,13 @@ class NPE(nn.Module):
     ):
         super().__init__()
 
-        self.flow = build(theta_dim, x_dim, **kwargs)
-
-        if moments is not None:
+        if moments is None:
+            mu, sigma = torch.zeros(theta_dim), torch.ones(theta_dim)
+        else:
             mu, sigma = moments
-            self.flow.transforms.insert(0, Buffer(AffineTransform, -mu / sigma, 1 / sigma))
+
+        self.flow = build(theta_dim, x_dim, **kwargs)
+        self.flow.transforms.insert(0, Unconditional(AffineTransform, -mu / sigma, 1 / sigma))
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r"""
@@ -380,7 +380,6 @@ class NPE(nn.Module):
 
         return self.flow(x).log_prob(theta)
 
-    @torch.no_grad()
     def sample(self, x: Tensor, shape: Size = ()) -> Tensor:
         r"""
         Arguments:
@@ -392,7 +391,8 @@ class NPE(nn.Module):
             with shape :math:`S + (*, D)`.
         """
 
-        return self.flow(x).sample(shape)
+        with torch.no_grad():
+            return self.flow(x).sample(shape)
 
 
 class NPELoss(nn.Module):
@@ -463,7 +463,6 @@ class AMNPE(NPE):
 
         return self.flow(torch.cat((x, b), dim=-1)).log_prob(theta)
 
-    @torch.no_grad()
     def sample(self, x: Tensor, b: BoolTensor, shape: Size = ()) -> Tensor:
         r"""
         Arguments:
@@ -478,7 +477,8 @@ class AMNPE(NPE):
 
         x, b_ = broadcast(x, b * 2.0 - 1.0, ignore=1)
 
-        return self.flow(torch.cat((x, b_), dim=-1)).sample(shape)[..., b]
+        with torch.no_grad():
+            return self.flow(torch.cat((x, b_), dim=-1)).sample(shape)[..., b]
 
 
 class AMNPELoss(nn.Module):

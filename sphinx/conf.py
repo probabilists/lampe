@@ -14,6 +14,8 @@ repository = 'https://github.com/francois-rozet/lampe'
 
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
+    'sphinx.ext.githubpages',
     'sphinx.ext.intersphinx',
     'sphinx.ext.linkcode',
     'sphinx.ext.napoleon',
@@ -28,11 +30,14 @@ autodoc_typehints = 'description'
 autodoc_typehints_description_target = 'documented'
 autodoc_typehints_format = 'short'
 
+autosummary_ignore_module_all = False
+
 intersphinx_mapping = {
     'matplotlib': ('https://matplotlib.org/stable', None),
     'numpy': ('https://numpy.org/doc/stable', None),
     'python': ('https://docs.python.org/3', None),
     'torch': ('https://pytorch.org/docs/stable', None),
+    'zuko': ('https://francois-rozet.github.io/zuko', None),
 }
 
 

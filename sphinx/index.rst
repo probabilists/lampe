@@ -7,9 +7,9 @@
 LAMPE
 =====
 
-:mod:`lampe` is a simulation-based inference (SBI) package that focuses on amortized estimation of posterior distributions, without relying on explicit likelihood functions; hence the name *Likelihood-free AMortized Posterior Estimation* (LAMPE). The package provides `PyTorch <https://pytorch.org>`_ implementations of modern amortized simulation-based inference algorithms like neural ratio estimation (NRE), neural posterior estimation (NPE) and more. Similar to PyTorch, the philosophy of LAMPE is to avoid obfuscation and expose all components, from network architecture to optimizer, to the user such that they are free to modify or replace anything they like.
+LAMPE is a simulation-based inference (SBI) package that focuses on amortized estimation of posterior distributions, without relying on explicit likelihood functions; hence the name *Likelihood-free AMortized Posterior Estimation* (LAMPE). The package provides `PyTorch <https://pytorch.org>`_ implementations of modern amortized simulation-based inference algorithms like neural ratio estimation (NRE), neural posterior estimation (NPE) and more. Similar to PyTorch, the philosophy of LAMPE is to avoid obfuscation and expose all components, from network architecture to optimizer, to the user such that they are free to modify or replace anything they like.
 
-As part of the inference pipeline, LAMPE provides components to efficiently `store and load data <api/data.html>`_ from disk, `diagnose predictions <api/diagnostics.html>`_ and `display results <api/plots.html>`_ graphically. The package also implements `normalizing flows <api/nn/flows.html>`_ from scratch in a way that is both easy to understand and extend.
+As part of the inference pipeline, :mod:`lampe` provides components to efficiently `store and load data <api/data.html>`_ from disk, `diagnose predictions <api/diagnostics.html>`_ and `display results <api/plots.html>`_ graphically.
 
 Installation
 ------------
@@ -42,29 +42,20 @@ for some observation :math:`x` and a prior distribution :math:`p(\theta)`, which
 References
 ----------
 
-The frontier of simulation-based inference
-(Cranmer et al., 2020)
-https://www.pnas.org/doi/10.1073/pnas.1912789117
+| The frontier of simulation-based inference (Cranmer et al., 2020)
+| https://www.pnas.org/doi/10.1073/pnas.1912789117
 
-Approximating Likelihood Ratios with Calibrated Discriminative Classifiers
-(Cranmer et al., 2015)
-https://arxiv.org/abs/1506.02169
+| Approximating Likelihood Ratios with Calibrated Discriminative Classifiers (Cranmer et al., 2015)
+| https://arxiv.org/abs/1506.02169
 
-Likelihood-free MCMC with Amortized Approximate Ratio Estimators
-(Hermans et al., 2019)
-https://arxiv.org/abs/1903.04057
+| Likelihood-free MCMC with Amortized Approximate Ratio Estimators (Hermans et al., 2019)
+| https://arxiv.org/abs/1903.04057
 
-Fast Likelihood-free Inference with Autoregressive Flows
-(Papamakarios et al., 2018)
-https://arxiv.org/abs/1805.07226
+| Fast Likelihood-free Inference with Autoregressive Flows (Papamakarios et al., 2018)
+| https://arxiv.org/abs/1805.07226
 
-Automatic Posterior Transformation for Likelihood-Free Inference
-(Greenberg et al., 2019)
-https://arxiv.org/abs/1905.07488
-
-Normalizing Flows for Probabilistic Modeling and Inference
-(Papamakarios et al., 2021)
-https://arxiv.org/abs/1912.02762
+| Automatic Posterior Transformation for Likelihood-Free Inference (Greenberg et al., 2019)
+| https://arxiv.org/abs/1905.07488
 
 .. toctree::
     :caption: lampe
@@ -72,7 +63,7 @@ https://arxiv.org/abs/1912.02762
     :maxdepth: 2
 
     tutorials.rst
-    api/index.rst
+    api.rst
 
 .. toctree::
     :caption: Development

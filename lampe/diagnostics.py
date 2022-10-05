@@ -15,9 +15,8 @@ def expected_coverage_mc(
     pairs: Iterable[Tuple[Tensor, Tensor]],
     n: int = 1024,
 ) -> Tuple[Tensor, Tensor]:
-    r"""Estimates the expected coverages of a posterior estimator :math:`q(\theta | x)`
-    over pairs :math:`(\theta^*, x^*)` drawn from the joint distribution
-    :math:`p(\theta, x)`.
+    r"""Estimates by Monte Carlo (MC) the expected coverages of a posterior estimator
+    :math:`q(\theta | x)` over pairs :math:`(\theta^*, x^*) \sim p(\theta, x)`.
 
     The expected coverage at credible level :math:`1 - \alpha` is the probability
     of :math:`\theta^*` to be included in the highest density region of total probability
@@ -36,12 +35,11 @@ def expected_coverage_mc(
     .. math:: P \big( \theta^* \in \Theta_{q(\theta | x^*)}(1 - \alpha) \big)
         = P(r^* \leq 1 - \alpha) .
 
-    In practice, Monte Carlo (MC) estimations of :math:`r^*` are used.
+    In practice, Monte Carlo estimations of :math:`r^*` are used.
 
     References:
-        Averting A Crisis In Simulation-Based Inference
-        (Hermans et al., 2021)
-        https://arxiv.org/abs/2110.06581
+        | Averting A Crisis In Simulation-Based Inference (Hermans et al., 2021)
+        | https://arxiv.org/abs/2110.06581
 
     Arguments:
         posterior: A posterior estimator :math:`q(\theta | x)`.
@@ -51,7 +49,7 @@ def expected_coverage_mc(
     Returns:
         A vector of increasing credible levels and their respective expected coverages.
 
-    Examples:
+    Example:
         >>> posterior = lampe.inference.NPE(3, 4)
         >>> testset = lampe.data.H5Dataset('test.h5')
         >>> levels, coverages = expected_coverage_mc(posterior.flow, testset)
@@ -84,13 +82,12 @@ def expected_coverage_ni(
     domain: Tuple[Tensor, Tensor],
     **kwargs,
 ) -> Tuple[Tensor, Tensor]:
-    r"""Estimates the expected coverages of a posterior estimator :math:`q(\theta | x)`
-    over pairs :math:`(\theta^*, x^*)` drawn from the joint distribution
-    :math:`p(\theta, x)`.
+    r"""Estimates by numerical integration (NI) the expected coverages of a posterior
+    estimator :math:`q(\theta | x)` over pairs :math:`(\theta^*, x^*) \sim p(\theta, x)`.
 
     Equivalent to :func:`expected_coverage_mc` but the proportions :math:`r^*` are
-    approximated by numerical integration (NI) over the domain, which is useful
-    when the posterior estimator can be evaluated but not be sampled from.
+    approximated by numerical integration over the domain, which is useful when the
+    posterior estimator can be evaluated but not be sampled from.
 
     Arguments:
         posterior: A posterior estimator :math:`\log q(\theta | x)`.
@@ -101,7 +98,7 @@ def expected_coverage_ni(
     Returns:
         A vector of increasing credible levels and their respective expected coverages.
 
-    Examples:
+    Example:
         >>> domain = (torch.zeros(3), torch.ones(3))
         >>> prior = lampe.distributions.BoxUniform(*domain)
         >>> ratio = lampe.inference.NRE(3, 4)

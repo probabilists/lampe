@@ -2,7 +2,6 @@
 name: "📝 Documentation"
 about: "Report an issue related to the documentation"
 labels: documentation
-
 ---
 
 ### Description

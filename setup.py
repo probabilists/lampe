@@ -10,10 +10,20 @@ with open('requirements.txt', 'r') as f:
 
 setuptools.setup(
     name='lampe',
-    version='0.5.5',
+    version='0.6.0',
     packages=setuptools.find_packages(),
     description='Likelihood-free AMortized Posterior Estimation with PyTorch',
-    keywords='parameter inference bayes posterior amortized likelihood ratio mcmc torch',
+    keywords=[
+        'simulation-based',
+        'inference',
+        'amortized',
+        'bayesian',
+        'posterior',
+        'likelihood',
+        'ratio',
+        'mcmc',
+        'torch',
+    ],
     long_description=readme,
     long_description_content_type='text/markdown',
     author='François Rozet',
@@ -34,9 +44,5 @@ setuptools.setup(
         'Programming Language :: Python :: 3',
     ],
     install_requires=required,
-    extras_require={
-        'docs': ['furo', 'sphinx'],
-        'test': ['pytest'],
-    },
     python_requires='>=3.8',
 )

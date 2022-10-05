@@ -134,6 +134,7 @@ def credible_levels(hist: Array, creds: Array) -> Array:
 
 def corner(
     data: Array,
+    weights: Array = None,
     domain: Tuple[Array, Array] = None,
     bins: Union[int, List[int]] = 64,
     creds: Array = [0.6827, 0.9545, 0.9973],
@@ -151,11 +152,12 @@ def corner(
 
     Arguments:
         data: Multi-dimensional data, either as a table or as a matrix of histograms.
+        weights: The importance weights of the data samples.
         domain: A pair of lower and upper domain bounds. If :py:`None`, inferred from data.
         bins: The number(s) of bins per dimension.
         creds: The region credibilities (in :math:`[0, 1]`) to delimit.
-        color: A color for histograms.
-        alpha: A transparency range.
+        color: The color of histograms. If :py:`None`, use the color cycler instead.
+        alpha: The transparency range.
         legend: A legend.
         labels: The dimension labels.
         smooth: The standard deviation of the smoothing kernels.
@@ -176,12 +178,9 @@ def corner(
     """
 
     # Histograms
-    if not isinstance(data, Array):
-        data = np.asarray(data, dtype=object)
-
-    if np.isscalar(data[0, 0]):
+    if np.asarray(data[0][0]).ndim == 0:
+        data = np.asarray(data)
         D = data.shape[-1]
-        data = data.reshape(-1, D)
 
         if type(bins) is int:
             bins = [bins] * D
@@ -205,6 +204,7 @@ def corner(
                         data[..., i],
                         bins=bins[i],
                         density=True,
+                        weights=weights,
                     )
                 else:
                     hist, _, _ = np.histogram2d(
@@ -212,10 +212,12 @@ def corner(
                         data[..., j],
                         bins=(bins[i], bins[j]),
                         density=True,
+                        weights=weights,
                     )
 
                 hists[i, j] = hist
     else:
+        data = np.asarray(data, dtype=object)
         D = len(data)
 
         if domain is None:
@@ -360,13 +362,19 @@ def mark_point(
     figure: mpl.figure.Figure,
     point: Array,
     color: Union[str, tuple] = 'black',
+    linestyle: str = 'dashed',
+    marker: str = 's',  # square
+    legend: str = None,
 ) -> None:
     r"""Marks a point on the histograms of a corner plot.
 
     Arguments:
         figure: The corner plot figure (see :func:`corner`).
         point: The point to mark.
-        color: A color for the lines and markers.
+        color: The color of the lines and markers.
+        linestyle: The style of the lines.
+        marker: The shape of the markers.
+        legend: A legend.
 
     Example:
         >>> mark_point(figure, [0.5, 0.3, -0.7], color='black')
@@ -379,32 +387,29 @@ def mark_point(
     D = len(point)
     axes = np.asarray(figure.axes).reshape(D, D)
 
+    # Legend
+    if legend is not None:
+        axes[0, -1].plot(
+            [],
+            [],
+            color=color,
+            linestyle=linestyle,
+            marker=marker,
+            solid_capstyle='butt',
+            label=legend,
+        )
+
+        axes[0, -1].legend(loc='upper right', frameon=False)
+
+    # Plot
     for i in range(D):
         for j in range(i + 1):
             ax = axes[i, j]
-
-            ax.axvline(
-                point[j],
-                color=color,
-                linestyle='--',
-                zorder=420,
-            )
+            ax.axvline(point[j], color=color, linestyle=linestyle)
 
             if i != j:
-                ax.axhline(
-                    point[i],
-                    color=color,
-                    linestyle='--',
-                    zorder=420,
-                )
-
-                ax.plot(
-                    point[j],
-                    point[i],
-                    color=color,
-                    marker='s',
-                    zorder=420,
-                )
+                ax.axhline(point[i], color=color, linestyle=linestyle)
+                ax.plot(point[j], point[i], color=color, marker=marker)
 
 
 def coverage_plot(
