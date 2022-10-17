@@ -10,7 +10,7 @@ with open('requirements.txt', 'r') as f:
 
 setuptools.setup(
     name='lampe',
-    version='0.6.0',
+    version='0.6.1',
     packages=setuptools.find_packages(),
     description='Likelihood-free AMortized Posterior Estimation with PyTorch',
     keywords=[
@@ -31,7 +31,7 @@ setuptools.setup(
     license='MIT license',
     url='https://github.com/francois-rozet/lampe',
     project_urls={
-        'Documentation': 'https://github.com/francois-rozet/lampe',
+        'Documentation': 'https://francois-rozet.github.io/lampe',
         'Source': 'https://github.com/francois-rozet/lampe',
         'Tracker': 'https://github.com/francois-rozet/lampe/issues',
     },

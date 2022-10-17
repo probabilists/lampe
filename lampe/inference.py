@@ -10,7 +10,7 @@ from typing import *
 
 from zuko.distributions import Distribution, DiagNormal
 from zuko.flows import FlowModule, MAF, Unconditional
-from zuko.transforms import AffineTransform
+from zuko.transforms import IdentityTransform, AffineTransform
 from zuko.utils import broadcast
 
 from .nn import MLP, Affine
@@ -74,11 +74,11 @@ class NRE(nn.Module):
         super().__init__()
 
         if moments is None:
-            mu, sigma = torch.zeros(theta_dim), torch.ones(theta_dim)
+            self.standardize = nn.Identity()
         else:
             mu, sigma = moments
+            self.standardize = Affine(-mu / sigma, 1 / sigma)
 
-        self.standardize = Affine(-mu / sigma, 1 / sigma)
         self.net = build(theta_dim + x_dim, 1, **kwargs)
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
@@ -359,12 +359,18 @@ class NPE(nn.Module):
         super().__init__()
 
         if moments is None:
-            mu, sigma = torch.zeros(theta_dim), torch.ones(theta_dim)
+            standardize = Unconditional(IdentityTransform)
         else:
             mu, sigma = moments
+            standardize = Unconditional(
+                AffineTransform,
+                -mu / sigma,
+                1 / sigma,
+                buffer=True,
+            )
 
         self.flow = build(theta_dim, x_dim, **kwargs)
-        self.flow.transforms.insert(0, Unconditional(AffineTransform, -mu / sigma, 1 / sigma))
+        self.flow.transforms.insert(0, standardize)
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r"""
