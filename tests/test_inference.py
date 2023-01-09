@@ -186,6 +186,53 @@ def test_AMNPELoss():
     assert l.requires_grad
 
 
+def test_NSE():
+    estimator = NSE(3, 5)
+
+    # Non-batched
+    theta, x, t = randn(3), randn(5), torch.tensor(0.5)
+    score = estimator(theta, x, t)
+
+    assert score.shape == (3,)
+    assert score.requires_grad
+
+    # Batched
+    theta, x, t = randn(256, 3), randn(256, 5), randn(256)
+    score = estimator(theta, x, t)
+
+    assert score.shape == (256, 3)
+
+    # Mixed
+    theta, x, t = randn(256, 3), randn(5), randn(1)
+    score = estimator(theta, x, t)
+
+    assert score.shape == (256, 3)
+
+    # Sample
+    x = randn(32, 5)
+    theta = estimator.flow(x).sample((8,))
+
+    assert theta.shape == (8, 32, 3)
+
+    # Log-density
+    with torch.no_grad():
+        log_p = estimator.flow(x).log_prob(theta)
+
+    assert log_p.shape == (8, 32)
+
+
+def test_NSELoss():
+    estimator = NSE(3, 5)
+    loss = NSELoss(estimator)
+
+    theta, x = randn(256, 3), randn(256, 5)
+
+    l = loss(theta, x)
+
+    assert l.shape == ()
+    assert l.requires_grad
+
+
 def test_MetropolisHastings():
     log_f = lambda x: -(x**2).sum(dim=-1) / 2
     f = lambda x: torch.exp(log_f(x))
