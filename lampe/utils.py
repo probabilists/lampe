@@ -98,7 +98,7 @@ def gridapply(
         ticks = torch.linspace(l, u - step, b).to(step) + step / 2
         coordinates.append(ticks)
 
-    grid = torch.cartesian_prod(*coordinates)
+    grid = torch.cartesian_prod(*coordinates).reshape(-1, dims)
 
     # Evaluate f(x) on grid
     y = [f(x) for x in grid.split(batch_size)]
