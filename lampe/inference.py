@@ -15,6 +15,7 @@ __all__ = [
     'MetropolisHastings',
 ]
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -629,8 +630,8 @@ class NSE(nn.Module):
 
         theta = self.standardize(theta)
         t = torch.stack((
-            torch.cos(torch.pi * t),
-            torch.sin(torch.pi * t),
+            torch.cos(math.pi * t),
+            torch.sin(math.pi * t),
         ), dim=-1)
         theta, x, t = broadcast(theta, x, t, ignore=1)
 
