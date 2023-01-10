@@ -317,7 +317,7 @@ class AMNRELoss(nn.Module):
 
         theta_prime = torch.roll(theta, 1, dims=0)
 
-        b = self.mask_dist.sample(theta.shape[:1])
+        b = self.mask_dist.sample(theta.shape[:-1])
 
         log_r, log_r_prime = self.estimator(
             torch.stack((theta, theta_prime)),
@@ -540,7 +540,7 @@ class AMNPELoss(nn.Module):
 
         theta_prime = torch.roll(theta, 1, dims=0)
 
-        b = self.mask_dist.sample(theta.shape[:1])
+        b = self.mask_dist.sample(theta.shape[:-1])
         theta = torch.where(b, theta, theta_prime)
 
         log_prob = self.estimator(theta, x, b)
@@ -556,7 +556,7 @@ class NSE(nn.Module):
     stochastic diffusion process
 
     .. math:: \mathrm{d} \theta = -\frac{1}{2} \beta(t) \theta \, \mathrm{d} t +
-        \sqrt{\beta(t) (1 + \alpha(t)) (1 - \alpha(t))} \, \mathrm{d} w
+        \sqrt{\beta(t) (1 - \alpha(t)^2)} \, \mathrm{d} w
 
     where
 
@@ -581,7 +581,7 @@ class NSE(nn.Module):
         \frac{1}{2} \beta(t) (1 + \alpha(t)) s_\phi(\theta, x, t) \right] \, \mathrm{d} t
 
     whose trajectories share the same marginal probability densities :math:`p(\theta_t | x)`
-    as the stochastic diffusion process.
+    as the diffusion process.
 
     References:
         | Score-Based Generative Modeling through Stochastic Differential Equations (Song et al., 2021)
@@ -590,6 +590,7 @@ class NSE(nn.Module):
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
+        t_dim: The dimensionality of the time embedding.
         moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
             the moments are used to standardize the parameters.
         build: The network constructor (e.g. :class:`lampe.nn.ResMLP`).
@@ -600,6 +601,7 @@ class NSE(nn.Module):
         self,
         theta_dim: int,
         x_dim: int,
+        t_dim: int = 1,
         moments: Tuple[Tensor, Tensor] = None,
         build: Callable[[int, int], nn.Module] = MLP,
         **kwargs,
@@ -612,8 +614,9 @@ class NSE(nn.Module):
             mu, sigma = moments
             self.standardize = Affine(-mu / sigma, 1 / sigma, trainable=False)
 
-        self.net = build(theta_dim + x_dim + 2, theta_dim, **kwargs)
+        self.net = build(theta_dim + x_dim + t_dim * 2, theta_dim, **kwargs)
 
+        self.register_buffer('periods', torch.arange(t_dim) + 1)
         self.register_buffer('zeros', torch.zeros(theta_dim))
         self.register_buffer('ones', torch.ones(theta_dim))
 
@@ -628,11 +631,10 @@ class NSE(nn.Module):
             The score :math:`s_\phi(\theta, x, t)`, with shape :math:`(*,)`.
         """
 
+        t = self.periods * math.pi * t[..., None]
+        t = torch.cat((t.cos(), t.sin()), dim=-1)
+
         theta = self.standardize(theta)
-        t = torch.stack((
-            torch.cos(math.pi * t),
-            torch.sin(math.pi * t),
-        ), dim=-1)
         theta, x, t = broadcast(theta, x, t, ignore=1)
 
         return self.net(torch.cat((theta, x, t), dim=-1))
@@ -706,7 +708,7 @@ class NSELoss(nn.Module):
             The scalar loss :math:`l`.
         """
 
-        t = theta.new_empty(theta.shape[:1]).uniform_(0, 1)
+        t = theta.new_empty(theta.shape[:-1]).uniform_(0, 1)
         alpha = self.estimator.alpha(t)[..., None]
 
         epsilon = torch.randn_like(theta)
