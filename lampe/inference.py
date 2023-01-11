@@ -47,8 +47,7 @@ class NRE(nn.Module):
     where :math:`\ell(p) = -\log p` is the negative log-likelihood. For this task, the
     decision function modeling the Bayes optimal classifier is
 
-    .. math:: d(\theta, x)
-        = \frac{p(\theta, x)}{p(\theta, x) + p(\theta) p(x)}
+    .. math:: d(\theta, x) = \frac{p(\theta, x)}{p(\theta, x) + p(\theta) p(x)}
 
     thereby defining the likelihood-to-evidence (LTE) ratio
 
@@ -161,12 +160,10 @@ class BNRELoss(nn.Module):
     Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math::
-        \begin{align}
-            l & = \frac{1}{N} \sum_{i = 1}^N
-                \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i)) \\
-              & + \lambda \left(1 - \frac{1}{N} \sum_{i = 1}^N
-                d_\phi(\theta_i, x_i) + d_\phi(\theta_{i+1}, x_i) \right)^2
-        \end{align}
+        l & = \frac{1}{N} \sum_{i = 1}^N
+            \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i)) \\
+          & + \lambda \left(1 - \frac{1}{N} \sum_{i = 1}^N
+            d_\phi(\theta_i, x_i) + d_\phi(\theta_{i+1}, x_i) \right)^2
 
     where :math:`\ell(p) = -\log p` is the negative log-likelihood.
 
@@ -341,11 +338,11 @@ class NPE(nn.Module):
 
     .. math::
         \arg\min_\phi & ~ \mathbb{E}_{p(x)}
-        \Big[ \text{KL} \big( p(\theta|x) \parallel p_\phi(\theta | x) \big) \Big] \\
+            \Big[ \text{KL} \big( p(\theta|x) \parallel p_\phi(\theta | x) \big) \Big] \\
         = \arg\min_\phi & ~ \mathbb{E}_{p(x)} \, \mathbb{E}_{p(\theta | x)}
-        \left[ \log \frac{p(\theta | x)}{p_\phi(\theta | x)} \right] \\
+            \left[ \log \frac{p(\theta | x)}{p_\phi(\theta | x)} \right] \\
         = \arg\min_\phi & ~ \mathbb{E}_{p(\theta, x)}
-        \big[ -\log p_\phi(\theta | x) \big] .
+            \big[ -\log p_\phi(\theta | x) \big] .
 
     Normalizing flows are typically used for :math:`p_\phi(\theta | x)` as they are
     differentiable parametric distributions enabling gradient-based optimization
@@ -738,16 +735,14 @@ class MetropolisHastings(object):
     distribution.
 
     .. math::
-        \begin{align}
-            1. ~ & x' \sim q(x' | x_{t-1}) \\
-            2. ~ & \alpha \gets \frac{f(x')}{f(x_{t-1})}
-                \frac{q(x_{t-1} | x')}{q(x' | x_{t-1})} \\
-            3. ~ & u \sim \mathcal{U}(0, 1) \\
-            4. ~ & x_t \gets \begin{cases}
-                x' & \text{if } u \leq \alpha \\
-                x_{t-1} & \text{otherwise}
-            \end{cases}
-        \end{align}
+        1. ~ & x' \sim q(x' | x_{t-1}) \\
+        2. ~ & \alpha \gets \frac{f(x')}{f(x_{t-1})}
+            \frac{q(x_{t-1} | x')}{q(x' | x_{t-1})} \\
+        3. ~ & u \sim \mathcal{U}(0, 1) \\
+        4. ~ & x_t \gets \begin{cases}
+            x' & \text{if } u \leq \alpha \\
+            x_{t-1} & \text{otherwise}
+        \end{cases}
 
     Asymptotically, i.e. when :math:`T \to \infty`, the distribution of samples
     :math:`x_t` is guaranteed to converge towards :math:`p(x)`. In this implementation,
