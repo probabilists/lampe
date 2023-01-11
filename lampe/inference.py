@@ -556,14 +556,9 @@ class NSE(nn.Module):
     .. math:: \mathrm{d} \theta_t = -\frac{1}{2} \beta(t) \theta_t \, \mathrm{d} t +
         \sqrt{\beta(t) (1 - \alpha(t)^2)} \, \mathrm{d} w
 
-    where
-
-    .. math::
-        \alpha(t) & = \exp \left( -\int_0^t \beta(u) \, \mathrm{d} u \right) \\
-        \beta(t) & = (\beta_\max - \beta_\min) \, t + \beta_\min .
-
-    The optimization problem is to minimize the rescaled score-matching objective, that
-    is,
+    where :math:`\alpha(t) = \exp(-\int_0^t \beta(u) \, \mathrm{d} u)` and
+    :math:`\beta(t) = (\beta_\max - \beta_\min) \, t + \beta_\min` . The optimization
+    problem is to minimize the rescaled score-matching objective, that is,
 
     .. math:: \arg\min_\phi \mathbb{E}_{p(\theta, x) p(t) p(\theta_t | \theta)}
         \Big[ \big\| s_\phi(\theta_t, x, t) - (1 - \alpha(t)) \nabla_{\! \theta_t}
