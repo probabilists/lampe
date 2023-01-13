@@ -574,7 +574,7 @@ class NSE(nn.Module):
     Given the latter, or an estimator of the latter, the probability flow ODE
 
     .. math:: \mathrm{d} \theta_t =
-        \left[ -\frac{1}{2} \beta(t) \theta - \frac{1}{2} \beta(t) (1 + \alpha(t))
+        \left[ -\frac{1}{2} \beta(t) \theta_t - \frac{1}{2} \beta(t) (1 + \alpha(t))
         s(\theta_t, x, t) \right] \, \mathrm{d} t
 
     shares the same marginal densities :math:`p(\theta_t | x)` as the diffusion process
