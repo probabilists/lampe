@@ -1,15 +1,13 @@
 r"""Neural networks, layers and modules."""
 
-__all__ = ['ResMLP']
+__all__ = ['MLP', 'ResMLP']
 
 import torch
 import torch.nn as nn
 
-from zuko.nn import MLP
-
-from textwrap import indent
 from torch import Tensor
 from typing import *
+from zuko.nn import MLP
 
 
 class Residual(nn.Module):
@@ -36,15 +34,15 @@ class Residual(nn.Module):
 class ResMLP(nn.Sequential):
     r"""Creates a residual multi-layer perceptron (ResMLP).
 
-    A ResMLP is a series of residual blocks where each block is a (shallow) MLP.
-    Using residual blocks instead of regular non-linear functions prevents the gradients
-    from vanishing, which allows for deeper networks.
+    A ResMLP is a series of residual blocks where each block is a (shallow) MLP. Using
+    residual blocks instead of regular non-linear functions prevents the gradients from
+    vanishing, which allows for deeper networks.
 
     Arguments:
         in_features: The number of input features.
         out_features: The number of output features.
         hidden_features: The numbers of hidden features.
-        kwargs: Keyword arguments passed to :class:`zuko.nn.MLP`.
+        kwargs: Keyword arguments passed to :class:`MLP`.
 
     Example:
         >>> net = ResMLP(64, 1, [32, 16], activation=nn.ELU)
@@ -55,16 +53,12 @@ class ResMLP(nn.Sequential):
             (0): Linear(in_features=32, out_features=32, bias=True)
             (1): ELU(alpha=1.0)
             (2): Linear(in_features=32, out_features=32, bias=True)
-            (3): ELU(alpha=1.0)
-            (4): Linear(in_features=32, out_features=32, bias=True)
           ))
           (2): Linear(in_features=32, out_features=16, bias=True)
           (3): Residual(MLP(
             (0): Linear(in_features=16, out_features=16, bias=True)
             (1): ELU(alpha=1.0)
             (2): Linear(in_features=16, out_features=16, bias=True)
-            (3): ELU(alpha=1.0)
-            (4): Linear(in_features=16, out_features=16, bias=True)
           ))
           (4): Linear(in_features=16, out_features=1, bias=True)
         )
@@ -86,7 +80,7 @@ class ResMLP(nn.Sequential):
             if after != before:
                 blocks.append(nn.Linear(before, after))
 
-            blocks.append(Residual(MLP(after, after, [after] * 2, **kwargs)))
+            blocks.append(Residual(MLP(after, after, [after], **kwargs)))
 
         blocks = blocks[:-1]
 
