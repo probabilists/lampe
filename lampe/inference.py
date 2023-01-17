@@ -25,11 +25,11 @@ from torch import Tensor, BoolTensor, Size
 from typing import *
 
 from zuko.distributions import Distribution, DiagNormal, NormalizingFlow
-from zuko.flows import FlowModule, MAF, Unconditional
-from zuko.transforms import IdentityTransform, AffineTransform, FFJTransform
+from zuko.flows import FlowModule, MAF
+from zuko.transforms import FFJTransform
 from zuko.utils import broadcast
 
-from .nn import MLP, Affine
+from .nn import MLP
 
 
 class NRE(nn.Module):
@@ -71,8 +71,6 @@ class NRE(nn.Module):
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
-        moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
-            the moments are used to standardize the parameters.
         build: The network constructor (e.g. :class:`lampe.nn.ResMLP`).
         kwargs: Keyword arguments passed to the constructor.
     """
@@ -81,17 +79,10 @@ class NRE(nn.Module):
         self,
         theta_dim: int,
         x_dim: int,
-        moments: Tuple[Tensor, Tensor] = None,
         build: Callable[[int, int], nn.Module] = MLP,
         **kwargs,
     ):
         super().__init__()
-
-        if moments is None:
-            self.standardize = nn.Identity()
-        else:
-            mu, sigma = moments
-            self.standardize = Affine(-mu / sigma, 1 / sigma, trainable=False)
 
         self.net = build(theta_dim + x_dim, 1, **kwargs)
 
@@ -105,7 +96,6 @@ class NRE(nn.Module):
             The log-ratio :math:`\log r_\phi(\theta, x)`, with shape :math:`(*,)`.
         """
 
-        theta = self.standardize(theta)
         theta, x = broadcast(theta, x, ignore=1)
 
         return self.net(torch.cat((theta, x), dim=-1)).squeeze(-1)
@@ -269,8 +259,7 @@ class AMNRE(NRE):
             theta, b = broadcast(theta, b, ignore=1)
             theta = theta.new_zeros(b.shape).masked_scatter(b, theta)
 
-        theta = self.standardize(theta) * b
-        theta, x, b = broadcast(theta, x, b * 2.0 - 1.0, ignore=1)
+        theta, x, b = broadcast(theta * b, x, b * 2.0 - 1.0, ignore=1)
 
         return self.net(torch.cat((theta, x, b), dim=-1)).squeeze(-1)
 
@@ -354,8 +343,6 @@ class NPE(nn.Module):
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
-        moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
-            the moments are used to standardize the parameters.
         build: The flow constructor (e.g. :class:`zuko.flows.NSF`).
         kwargs: Keyword arguments passed to the constructor.
     """
@@ -364,25 +351,12 @@ class NPE(nn.Module):
         self,
         theta_dim: int,
         x_dim: int,
-        moments: Tuple[Tensor, Tensor] = None,
         build: Callable[[int, int], FlowModule] = MAF,
         **kwargs,
     ):
         super().__init__()
 
-        if moments is None:
-            standardize = Unconditional(IdentityTransform)
-        else:
-            mu, sigma = moments
-            standardize = Unconditional(
-                AffineTransform,
-                -mu / sigma,
-                1 / sigma,
-                buffer=True,
-            )
-
         self.flow = build(theta_dim, x_dim, **kwargs)
-        self.flow.transforms.insert(0, standardize)
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r"""

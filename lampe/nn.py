@@ -10,31 +10,6 @@ from typing import *
 from zuko.nn import MLP
 
 
-class Affine(nn.Module):
-    r"""Creates an element-wise affine layer.
-
-    .. math:: y = \alpha x + \beta
-
-    Arguments:
-        shift: The shift term :math:`\beta`.
-        scale: The scale factor :math:`\alpha`.
-        trainable: Whether the layer is trainable or not.
-    """
-
-    def __init__(self, shift: Tensor, scale: Tensor, trainable: bool = True):
-        super().__init__()
-
-        if trainable:
-            self.shift = nn.Parameter(torch.as_tensor(shift))
-            self.scale = nn.Parameter(torch.as_tensor(scale))
-        else:
-            self.register_buffer('shift', torch.as_tensor(shift))
-            self.register_buffer('scale', torch.as_tensor(scale))
-
-    def forward(self, x: Tensor) -> Tensor:
-        return x * self.scale + self.shift
-
-
 class Residual(nn.Module):
     r"""Creates a residual block from a non-linear function :math:`f`.
 
