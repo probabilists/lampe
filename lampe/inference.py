@@ -589,8 +589,6 @@ class NSE(nn.Module):
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
         t_dim: The dimensionality of the time embedding.
-        moments: The parameters moments :math:`\mu` and :math:`\sigma`. If provided,
-            the moments are used to standardize the parameters.
         build: The network constructor (e.g. :class:`lampe.nn.ResMLP`).
         kwargs: Keyword arguments passed to the constructor.
     """
@@ -600,17 +598,10 @@ class NSE(nn.Module):
         theta_dim: int,
         x_dim: int,
         t_dim: int = 1,
-        moments: Tuple[Tensor, Tensor] = None,
         build: Callable[[int, int], nn.Module] = MLP,
         **kwargs,
     ):
         super().__init__()
-
-        if moments is None:
-            self.standardize = nn.Identity()
-        else:
-            mu, sigma = moments
-            self.standardize = Affine(-mu / sigma, 1 / sigma, trainable=False)
 
         self.net = build(theta_dim + x_dim + t_dim * 2, theta_dim, **kwargs)
 
@@ -632,7 +623,6 @@ class NSE(nn.Module):
         t = self.periods * math.pi * t[..., None]
         t = torch.cat((t.cos(), t.sin()), dim=-1)
 
-        theta = self.standardize(theta)
         theta, x, t = broadcast(theta, x, t, ignore=1)
 
         return self.net(torch.cat((theta, x, t), dim=-1))
