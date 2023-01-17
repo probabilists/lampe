@@ -1,5 +1,21 @@
 r"""Inference components such as estimators, training losses and MCMC samplers."""
 
+__all__ = [
+    'NRE',
+    'NRELoss',
+    'BNRELoss',
+    'AMNRE',
+    'AMNRELoss',
+    'NPE',
+    'NPELoss',
+    'AMNPE',
+    'AMNPELoss',
+    'NSE',
+    'NSELoss',
+    'MetropolisHastings',
+]
+
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,8 +24,9 @@ from itertools import islice
 from torch import Tensor, BoolTensor, Size
 from typing import *
 
-from zuko.distributions import Distribution, DiagNormal
+from zuko.distributions import Distribution, DiagNormal, NormalizingFlow
 from zuko.flows import FlowModule, MAF
+from zuko.transforms import FFJTransform
 from zuko.utils import broadcast
 
 from .nn import MLP
@@ -19,20 +36,18 @@ class NRE(nn.Module):
     r"""Creates a neural ratio estimation (NRE) classifier network.
 
     The principle of neural ratio estimation is to train a classifier network
-    :math:`d_\phi(\theta, x)` to discriminate between pairs :math:`(\theta, x)`
-    equally sampled from the joint distribution :math:`p(\theta, x)` and the
-    product of the marginals :math:`p(\theta)p(x)`. Formally, the optimization
-    problem is
+    :math:`d_\phi(\theta, x)` to discriminate between pairs :math:`(\theta, x)` equally
+    sampled from the joint distribution :math:`p(\theta, x)` and the product of the
+    marginals :math:`p(\theta)p(x)`. Formally, the optimization problem is
 
     .. math:: \arg\min_\phi
         \mathbb{E}_{p(\theta, x)} \big[ \ell(d_\phi(\theta, x)) \big] +
         \mathbb{E}_{p(\theta)p(x)} \big[ \ell(1 - d_\phi(\theta, x)) \big]
 
-    where :math:`\ell(p) = - \log p` is the negative log-likelihood.
-    For this task, the decision function modeling the Bayes optimal classifier is
+    where :math:`\ell(p) = -\log p` is the negative log-likelihood. For this task, the
+    decision function modeling the Bayes optimal classifier is
 
-    .. math:: d(\theta, x)
-        = \frac{p(\theta, x)}{p(\theta, x) + p(\theta) p(x)}
+    .. math:: d(\theta, x) = \frac{p(\theta, x)}{p(\theta, x) + p(\theta) p(x)}
 
     thereby defining the likelihood-to-evidence (LTE) ratio
 
@@ -87,14 +102,14 @@ class NRE(nn.Module):
 
 
 class NRELoss(nn.Module):
-    r"""Creates a module that calculates the loss :math:`l` of a NRE classifier
-    :math:`d_\phi`. Given a batch of :math:`N` pairs :math:`\{ (\theta_i, x_i) \}`,
-    the module returns
+    r"""Creates a module that calculates the cross-entropy loss for a NRE classifier.
+
+    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math:: l = \frac{1}{N} \sum_{i = 1}^N
         \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i))
 
-    where :math:`\ell(p) = - \log p` is the negative log-likelihood.
+    where :math:`\ell(p) = -\log p` is the negative log-likelihood.
 
     Arguments:
         estimator: A classifier network :math:`d_\phi(\theta, x)`.
@@ -129,20 +144,18 @@ class NRELoss(nn.Module):
 
 
 class BNRELoss(nn.Module):
-    r"""Creates a module that calculates the loss :math:`l` of a balanced NRE (BNRE)
-    classifier :math:`d_\phi`. Given a batch of :math:`N` pairs
-    :math:`\{ (\theta_i, x_i) \}`, the module returns
+    r"""Creates a module that calculates the balanced cross-entropy loss for a balanced
+    NRE (BNRE) classifier.
+
+    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math::
-        \begin{align}
-            l & = \frac{1}{N} \sum_{i = 1}^N
+        l & = \frac{1}{N} \sum_{i = 1}^N
             \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i)) \\
-              & + \lambda \left(1 - \frac{1}{N} \sum_{i = 1}^N
-                d_\phi(\theta_i, x_i) + d_\phi(\theta_{i+1}, x_i)
-            \right)^2
-        \end{align}
+          & + \lambda \left(1 - \frac{1}{N} \sum_{i = 1}^N
+            d_\phi(\theta_i, x_i) + d_\phi(\theta_{i+1}, x_i) \right)^2
 
-    where :math:`\ell(p) = - \log p` is the negative log-likelihood.
+    where :math:`\ell(p) = -\log p` is the negative log-likelihood.
 
     References:
         | Towards Reliable Simulation-Based Inference with Balanced Neural Ratio Estimation (Delaunoy et al., 2022)
@@ -191,8 +204,8 @@ class AMNRE(NRE):
     The principle of AMNRE is to introduce, as input to the classifier, a binary mask
     :math:`b \in \{0, 1\}^D` indicating a subset of parameters :math:`\theta_b =
     (\theta_i: b_i = 1)` of interest. Intuitively, this allows the classifier to
-    distinguish subspaces and to learn a different ratio for each of them. Formally,
-    the classifier network takes the form :math:`d_\phi(\theta_b, x, b)` and the
+    distinguish subspaces and to learn a different ratio for each of them. Formally, the
+    classifier network takes the form :math:`d_\phi(\theta_b, x, b)` and the
     optimization problem becomes
 
     .. math:: \arg\min_\phi
@@ -234,7 +247,7 @@ class AMNRE(NRE):
         r"""
         Arguments:
             theta: The parameters :math:`\theta`, with shape :math:`(*, D)`, or
-                a subset :math:`\theta_b`, with shape :math:`(*, |b|)`.
+                a subset :math:`\theta_b`.
             x: The observation :math:`x`, with shape :math:`(*, L)`.
             b: A binary mask :math:`b`, with shape :math:`(*, D)`.
 
@@ -252,9 +265,9 @@ class AMNRE(NRE):
 
 
 class AMNRELoss(nn.Module):
-    r"""Creates a module that calculates the loss :math:`l` of a AMNRE classifier
-    :math:`d_\phi`. Given a batch of :math:`N` pairs :math:`\{ (\theta_i, x_i) \}`,
-    the module returns
+    r"""Creates a module that calculates the cross-entropy loss for an AMNRE classifier.
+
+    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math:: l = \frac{1}{N} \sum_{i = 1}^N
         \ell(d_\phi(\theta_i \odot b_i, x_i, b_i)) +
@@ -310,15 +323,15 @@ class NPE(nn.Module):
     distribution :math:`p_\phi(\theta | x)` to approximate the posterior distribution
     :math:`p(\theta | x)`. The optimization problem is to minimize the expected
     Kullback-Leibler (KL) divergence between the two distributions for all observations
-    :math:`x \sim p(x)`, that is
+    :math:`x \sim p(x)`, that is,
 
     .. math::
         \arg\min_\phi & ~ \mathbb{E}_{p(x)}
-        \Big[ \text{KL} \big( p(\theta|x) \parallel p_\phi(\theta | x) \big) \Big] \\
+            \Big[ \text{KL} \big( p(\theta|x) \parallel p_\phi(\theta | x) \big) \Big] \\
         = \arg\min_\phi & ~ \mathbb{E}_{p(x)} \, \mathbb{E}_{p(\theta | x)}
-        \left[ \log \frac{p(\theta | x)}{p_\phi(\theta | x)} \right] \\
+            \left[ \log \frac{p(\theta | x)}{p_\phi(\theta | x)} \right] \\
         = \arg\min_\phi & ~ \mathbb{E}_{p(\theta, x)}
-            \big[ - \log p_\phi(\theta | x) \big] .
+            \big[ -\log p_\phi(\theta | x) \big] .
 
     Normalizing flows are typically used for :math:`p_\phi(\theta | x)` as they are
     differentiable parametric distributions enabling gradient-based optimization
@@ -375,9 +388,10 @@ class NPE(nn.Module):
 
 
 class NPELoss(nn.Module):
-    r"""Creates a module that calculates the loss :math:`l` of a NPE normalizing flow
-    :math:`p_\phi`. Given a batch of :math:`N` pairs :math:`\{ (\theta_i, x_i) \}`,
-    the module returns
+    r"""Creates a module that calculates the negative log-likelihood loss for a NPE
+    normalizing flow.
+
+    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math:: l = \frac{1}{N} \sum_{i = 1}^N -\log p_\phi(\theta_i | x_i) .
 
@@ -461,9 +475,10 @@ class AMNPE(NPE):
 
 
 class AMNPELoss(nn.Module):
-    r"""Creates a module that calculates the loss :math:`l` of an AMNPE normalizing flow
-    :math:`p_\phi`. Given a batch of :math:`N` pairs :math:`\{ (\theta_i, x_i) \}`,
-    the module returns
+    r"""Creates a module that calculates the negative log-likelihood loss for an AMNPE
+    normalizing flow.
+
+    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math:: l = \frac{1}{N} \sum_{i = 1}^N
         -\log p_\phi(\theta_i \odot b_i + \theta_{i + 1} \odot (1 - b_i) | x_i, b_i)
@@ -505,20 +520,188 @@ class AMNPELoss(nn.Module):
         return -log_prob.mean()
 
 
+class NSE(nn.Module):
+    r"""Creates a neural score estimation (NSE) regression network.
+
+    The principle of neural score estimation is to train a regression network
+    :math:`s_\phi(\theta_t, x, t)` to approximate the score :math:`\nabla_{\! \theta_t}
+    \log p(\theta_t | x)` of the sub-variance preserving (sub-VP) diffusion process
+
+    .. math:: \mathrm{d} \theta_t = -\frac{1}{2} \beta(t) \theta_t \, \mathrm{d} t +
+        \sqrt{\beta(t) (1 - \alpha(t)^2)} \, \mathrm{d} w
+
+    where :math:`\alpha(t) = \exp(-\int_0^t \beta(u) \, \mathrm{d} u)` and
+    :math:`\beta(t) = (\beta_\max - \beta_\min) \, t + \beta_\min` . The optimization
+    problem is to minimize the rescaled score-matching objective, that is,
+
+    .. math:: \arg\min_\phi \mathbb{E}_{p(\theta, x) p(t) p(\theta_t | \theta)}
+        \Big[ \big\| s_\phi(\theta_t, x, t) - (1 - \alpha(t)) \nabla_{\! \theta_t}
+        \log p(\theta_t | \theta) \big\|_2^2 \Big]
+
+    where :math:`p(\theta_t | \theta) = \mathcal{N}(\theta_t; \sqrt{\alpha(t)} \,
+    \theta, (1 - \alpha(t))^2 I)` is the perturbation kernel corresponding to the
+    diffusion process and for which the optimal regressor is the rescaled score
+
+    .. math:: s(\theta_t, x, t) =
+        (1 - \alpha(t)) \nabla_{\! \theta_t} \log p(\theta_t | x) .
+
+    Given the latter, or an estimator of the latter, the probability flow ODE
+
+    .. math:: \mathrm{d} \theta_t =
+        \left[ -\frac{1}{2} \beta(t) \theta_t - \frac{1}{2} \beta(t) (1 + \alpha(t))
+        s(\theta_t, x, t) \right] \, \mathrm{d} t
+
+    shares the same marginal densities :math:`p(\theta_t | x)` as the diffusion process
+    and can be efficiently integrated (forward for log-density computation and backward
+    for sampling) with black-box ODE solvers.
+
+    References:
+        | Score-Based Generative Modeling through Stochastic Differential Equations (Song et al., 2021)
+        | https://arxiv.org/abs/2011.13456
+
+    Arguments:
+        theta_dim: The dimensionality :math:`D` of the parameter space.
+        x_dim: The dimensionality :math:`L` of the observation space.
+        t_dim: The dimensionality of the time embedding.
+        build: The network constructor (e.g. :class:`lampe.nn.ResMLP`).
+        kwargs: Keyword arguments passed to the constructor.
+    """
+
+    def __init__(
+        self,
+        theta_dim: int,
+        x_dim: int,
+        t_dim: int = 1,
+        build: Callable[[int, int], nn.Module] = MLP,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.net = build(theta_dim + x_dim + t_dim * 2, theta_dim, **kwargs)
+
+        self.register_buffer('periods', torch.arange(t_dim) + 1)
+        self.register_buffer('zeros', torch.zeros(theta_dim))
+        self.register_buffer('ones', torch.ones(theta_dim))
+
+    def forward(self, theta: Tensor, x: Tensor, t: Tensor) -> Tensor:
+        r"""
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(*, D)`.
+            x: The observation :math:`x`, with shape :math:`(*, L)`.
+            t: The time :math:`t`, with shape :math:`(*,).`
+
+        Returns:
+            The rescaled score :math:`s_\phi(\theta, x, t)`, with shape :math:`(*, D)`.
+        """
+
+        t = self.periods * math.pi * t[..., None]
+        t = torch.cat((t.cos(), t.sin()), dim=-1)
+
+        theta, x, t = broadcast(theta, x, t, ignore=1)
+
+        return self.net(torch.cat((theta, x, t), dim=-1))
+
+    def alpha(self, t: Tensor) -> Tensor:
+        return torch.exp(-8.0 * t**2)
+
+    def beta(self, t: Tensor) -> Tensor:
+        return 16.0 * t
+
+    def ode(self, theta: Tensor, x: Tensor, t: Tensor) -> Tensor:
+        drift = -self.beta(t) / 2 * theta
+        diffusion = -self.beta(t) / 2 * (1 + self.alpha(t)) * self.forward(theta, x, t)
+
+        return drift + diffusion
+
+    def flow(self, x: Tensor) -> Distribution:
+        r"""
+        Arguments:
+            x: The observation :math:`x`, with shape :math:`(*, L)`.
+
+        Returns:
+            The posterior distribution :math:`p_\phi(\theta | x)` induced by the
+            probability flow ODE.
+
+        Note:
+            The :func:`log_prob` method of the returned distribution is an unbiased
+            stochastic estimator of the true log-density. One should average over
+            a sufficient number of evaluations to attain small errors.
+        """
+
+        batch_shape = x.shape[:-1]
+
+        return NormalizingFlow(
+            transform=FFJTransform(
+                f=lambda theta, t: self.ode(theta, x, t),
+                time=x.new_tensor(1.0),
+                phi=(x, *self.parameters()),
+            ),
+            base=DiagNormal(self.zeros, self.ones).expand(batch_shape),
+        )
+
+
+class NSELoss(nn.Module):
+    r"""Creates a module that calculates the rescaled score-matching loss for a NSE
+    regressor.
+
+    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
+
+    .. math:: l = \frac{1}{N} \sum_{i = 1}^N
+        \| s_\phi(\theta'_i, x_i, t_i) + \varepsilon_i \|_2^2
+
+    where :math:`t_i \sim \mathcal{U}(0, 1)`, :math:`\varepsilon_i \sim \mathcal{N}(0,
+    I)` and :math:`\theta'_i = \sqrt{\alpha(t_i)} \, \theta_i + (1 - \alpha(t_i)) \,
+    \varepsilon_i`.
+
+    Arguments:
+        estimator: A regression network :math:`s_\phi(\theta, x, t)`.
+    """
+
+    def __init__(self, estimator: nn.Module):
+        super().__init__()
+
+        self.estimator = estimator
+
+    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
+        r"""
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
+            x: The observation :math:`x`, with shape :math:`(N, L)`.
+
+        Returns:
+            The scalar loss :math:`l`.
+        """
+
+        t = theta.new_empty(theta.shape[:-1]).uniform_(0, 1)
+        alpha = self.estimator.alpha(t)[..., None]
+
+        epsilon = torch.randn_like(theta)
+        theta_prime = alpha.sqrt() * theta + (1 - alpha) * epsilon
+
+        score = self.estimator(theta_prime, x, t)
+
+        return (score + epsilon).square().mean()
+
+
 class MetropolisHastings(object):
     r"""Creates a batched Metropolis-Hastings sampler.
 
     Metropolis-Hastings is a Markov chain Monte Carlo (MCMC) sampling algorithm used to
-    sample from intractable distributions :math:`p(x)` whose density is proportional to a
-    tractable function :math:`f(x)`, with :math:`x \in \mathcal{X}`. The algorithm
+    sample from intractable distributions :math:`p(x)` whose density is proportional to
+    a tractable function :math:`f(x)`, with :math:`x \in \mathcal{X}`. The algorithm
     consists in repeating the following routine for :math:`t = 1` to :math:`T`, where
     :math:`x_0` is the initial sample and :math:`q(x' | x)` is a pre-defined transition
     distribution.
 
-    1. sample :math:`x' \sim q(x' | x_{t-1})`
-    2. :math:`\displaystyle \alpha \gets \frac{f(x')}{f(x_{t-1})} \frac{q(x_{t-1} | x')}{q(x' | x_{t-1})}`
-    3. sample :math:`u \sim \mathcal{U}(0, 1)`
-    4. :math:`x_t \gets \begin{cases} x' & \text{if } u \leq \alpha \\ x_{t-1} & \text{otherwise} \end{cases}`
+    .. math::
+        1. ~ & x' \sim q(x' | x_{t-1}) \\
+        2. ~ & \alpha \gets \frac{f(x')}{f(x_{t-1})}
+            \frac{q(x_{t-1} | x')}{q(x' | x_{t-1})} \\
+        3. ~ & u \sim \mathcal{U}(0, 1) \\
+        4. ~ & x_t \gets \begin{cases}
+            x' & \text{if } u \leq \alpha \\
+            x_{t-1} & \text{otherwise}
+        \end{cases}
 
     Asymptotically, i.e. when :math:`T \to \infty`, the distribution of samples
     :math:`x_t` is guaranteed to converge towards :math:`p(x)`. In this implementation,
