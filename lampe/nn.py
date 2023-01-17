@@ -12,26 +12,6 @@ from torch import Tensor
 from typing import *
 
 
-class Affine(nn.Module):
-    r"""Creates an element-wise affine layer.
-
-    .. math:: y = \alpha x + \beta
-
-    Arguments:
-        shift: The shift term :math:`\beta`.
-        scale: The scale factor :math:`\alpha`.
-    """
-
-    def __init__(self, shift: Tensor, scale: Tensor):
-        super().__init__()
-
-        self.shift = nn.Parameter(torch.as_tensor(shift))
-        self.scale = nn.Parameter(torch.as_tensor(scale))
-
-    def forward(self, x: Tensor) -> Tensor:
-        return x * self.scale + self.shift
-
-
 class Residual(nn.Module):
     r"""Creates a residual block from a non-linear function :math:`f`.
 
