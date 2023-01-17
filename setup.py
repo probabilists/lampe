@@ -10,7 +10,7 @@ with open('requirements.txt', 'r') as f:
 
 setuptools.setup(
     name='lampe',
-    version='0.6.1',
+    version='0.7.0',
     packages=setuptools.find_packages(),
     description='Likelihood-free AMortized Posterior Estimation with PyTorch',
     keywords=[
