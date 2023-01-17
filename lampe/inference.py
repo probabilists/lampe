@@ -41,8 +41,8 @@ class NRE(nn.Module):
     marginals :math:`p(\theta)p(x)`. Formally, the optimization problem is
 
     .. math:: \arg\min_\phi
-        \mathbb{E}_{p(\theta, x)} \big[ \ell(d_\phi(\theta, x)) \big] +
-        \mathbb{E}_{p(\theta)p(x)} \big[ \ell(1 - d_\phi(\theta, x)) \big]
+        \frac{1}{2} \mathbb{E}_{p(\theta, x)} \big[ \ell(d_\phi(\theta, x)) \big] +
+        \frac{1}{2} \mathbb{E}_{p(\theta)p(x)} \big[ \ell(1 - d_\phi(\theta, x)) \big]
 
     where :math:`\ell(p) = -\log p` is the negative log-likelihood. For this task, the
     decision function modeling the Bayes optimal classifier is
@@ -106,7 +106,7 @@ class NRELoss(nn.Module):
 
     Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
-    .. math:: l = \frac{1}{N} \sum_{i = 1}^N
+    .. math:: l = \frac{1}{2N} \sum_{i = 1}^N
         \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i))
 
     where :math:`\ell(p) = -\log p` is the negative log-likelihood.
@@ -140,7 +140,7 @@ class NRELoss(nn.Module):
         l1 = -F.logsigmoid(log_r).mean()
         l0 = -F.logsigmoid(-log_r_prime).mean()
 
-        return l1 + l0
+        return (l1 + l0) / 2
 
 
 class BNRELoss(nn.Module):
@@ -150,7 +150,7 @@ class BNRELoss(nn.Module):
     Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math::
-        l & = \frac{1}{N} \sum_{i = 1}^N
+        l & = \frac{1}{2N} \sum_{i = 1}^N
             \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i)) \\
           & + \lambda \left(1 - \frac{1}{N} \sum_{i = 1}^N
             d_\phi(\theta_i, x_i) + d_\phi(\theta_{i+1}, x_i) \right)^2
@@ -194,7 +194,7 @@ class BNRELoss(nn.Module):
         l0 = -F.logsigmoid(-log_r_prime).mean()
         lb = (torch.sigmoid(log_r) + torch.sigmoid(log_r_prime) - 1).mean().square()
 
-        return l1 + l0 + self.lmbda * lb
+        return (l1 + l0) / 2 + self.lmbda * lb
 
 
 class AMNRE(NRE):
@@ -209,8 +209,8 @@ class AMNRE(NRE):
     optimization problem becomes
 
     .. math:: \arg\min_\phi
-        \mathbb{E}_{p(\theta, x) P(b)} \big[ \ell(d_\phi(\theta_b, x, b)) \big] +
-        \mathbb{E}_{p(\theta)p(x) P(b)} \big[ \ell(1 - d_\phi(\theta_b, x, b)) \big],
+        \frac{1}{2} \mathbb{E}_{p(\theta, x) P(b)} \big[ \ell(d_\phi(\theta_b, x, b)) \big] +
+        \frac{1}{2} \mathbb{E}_{p(\theta)p(x) P(b)} \big[ \ell(1 - d_\phi(\theta_b, x, b)) \big],
 
     where :math:`P(b)` is a binary mask distribution. In this context, the Bayes
     optimal classifier is
@@ -269,7 +269,7 @@ class AMNRELoss(nn.Module):
 
     Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
-    .. math:: l = \frac{1}{N} \sum_{i = 1}^N
+    .. math:: l = \frac{1}{2N} \sum_{i = 1}^N
         \ell(d_\phi(\theta_i \odot b_i, x_i, b_i)) +
         \ell(1 - d_\phi(\theta_{i+1} \odot b_i, x_i, b_i))
 
@@ -313,7 +313,7 @@ class AMNRELoss(nn.Module):
         l1 = -F.logsigmoid(log_r).mean()
         l0 = -F.logsigmoid(-log_r_prime).mean()
 
-        return l1 + l0
+        return (l1 + l0) / 2
 
 
 class NPE(nn.Module):
