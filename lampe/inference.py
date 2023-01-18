@@ -567,6 +567,74 @@ class CNRELoss(nn.Module):
         assert gamma > 0, f"gamma = {gamma} must be greater than 0."
         self.gamma = gamma
     
+    def _get_log_rs(
+        self,
+        theta: Tensor, 
+        x: Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
+            x: The observation :math:`x`, with shape :math:`(N, L)`.
+
+        Returns:
+            (log_r_y_K, log_r_y_0): log_r_y_K the log ratios computed for y=K 
+                with shape :math:`(K, N)`, log_r_y_0 the log ratios computed 
+                for y=0 with shape :math:`(K, N)`.
+        """
+        assert theta.shape[0] == x.shape[0], "Batch sizes for theta and x must match."
+        batch_size = theta.shape[0]
+
+        inds = torch.arange(batch_size)
+        two_k_rolled_copies = torch.arange(2 * self.num_classes)
+        rolled_inds = (inds + two_k_rolled_copies[:, None]) % batch_size
+        log_r = self.estimator(theta[rolled_inds], x)
+        
+        # index [0, ...] of log_r_y_K is the theta-x-pair sampled from the joint p(theta,x)
+        # all other indicies are drawn marginally
+        # log_r_y_0 only contains marginal draws
+        log_r_y_K, log_r_y_0 = log_r.split((self.num_classes, self.num_classes))
+        return log_r_y_K, log_r_y_0
+
+    def _get_log_probs(
+        self,
+        log_r_y_K: torch.Tensor, 
+        log_r_y_0: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Arguments:
+            log_r_y_K: log_r_y_K the log ratios computed for y=K with shape :math:`(K, N)`.
+            log_r_y_0: log_r_y_0 the log ratios computed for y=0 with shape :math:`(K, N)`.
+
+        Returns:
+            (log_prob_y_K, log_prob_y_0): log_prob_y_K is the classification log prob for y=K,
+                log_prob_y_0 is the classification log prob for y=0
+        """
+        batch_size = log_r_y_K.shape[-1]
+
+        dtype = log_r_y_K.dtype
+        device = log_r_y_K.device
+
+        # To use logsumexp, we extend the denominator logits with loggamma
+        loggamma = torch.tensor(self.gamma, dtype=dtype, device=device).log()
+        logK = torch.tensor(self.num_classes, dtype=dtype, device=device).log()
+        denominator_y_K = torch.concat(
+            [loggamma + log_r_y_K, logK.expand((1, batch_size))],
+            dim=0,
+        )
+        denominator_y_0 = torch.concat(
+            [loggamma + log_r_y_0, logK.expand((1, batch_size))],
+            dim=0,
+        )
+
+        # Compute the contributions to the loss from each term in the classification.
+        log_prob_y_K = (
+            loggamma + log_r_y_K[0, :] - torch.logsumexp(denominator_y_K, dim=0)
+        )
+        log_prob_y_0 = logK - torch.logsumexp(denominator_y_0, dim=0)
+
+        return log_prob_y_K, log_prob_y_0
+
     def forward(
         self, theta: Tensor, x: Tensor
     ) -> torch.Tensor:
@@ -578,42 +646,53 @@ class CNRELoss(nn.Module):
         Returns:
             The scalar loss :math:`\hat{\ell}_{\gamma, K}(\bold{w})`.
         """
-        assert theta.shape[0] == x.shape[0], "Batch sizes for theta and x must match."
-        batch_size = theta.shape[0]
-
-        inds = torch.arange(batch_size)
-        two_k_rolled_copies = torch.arange(2 * self.num_classes)
-        rolled_inds = (inds + two_k_rolled_copies[:, None]) % batch_size
-        log_r = self.estimator(theta[rolled_inds], x)
-        # index 0 of log_r is the theta-x-pair sampled from the joint p(theta,x)
-        # everything else is drawn marginally
-        log_r, log_r_prime = log_r.split((self.num_classes, self.num_classes))
-
-        dtype = log_r.dtype
-        device = log_r.device
-
-        # To use logsumexp, we extend the denominator logits with loggamma
-        loggamma = torch.tensor(self.gamma, dtype=dtype, device=device).log()
-        logK = torch.tensor(self.num_classes, dtype=dtype, device=device).log()
-        denominator_joint = torch.concat(
-            [loggamma + log_r, logK.expand((1, batch_size))],
-            dim=0,
-        )
-        denominator_marginal = torch.concat(
-            [loggamma + log_r_prime, logK.expand((1, batch_size))],
-            dim=0,
-        )
-
-        # Compute the contributions to the loss from each term in the classification.
-        log_prob_joint = (
-            loggamma + log_r[:, 0] - torch.logsumexp(denominator_joint, dim=0)
-        )
-        log_prob_marginal = logK - torch.logsumexp(denominator_marginal, dim=0)
+        log_r_y_K, log_r_y_0 = self._get_log_rs(theta, x)
+        log_prob_y_K, log_prob_y_0 = self._get_log_probs(log_r_y_K, log_r_y_0)
 
         return -torch.mean(
-            (1 / (1 + self.gamma)) * log_prob_marginal + \
-            (self.gamma / (1 + self.gamma)) * log_prob_joint
+            (1 / (1 + self.gamma)) * log_prob_y_0 + \
+            (self.gamma / (1 + self.gamma)) * log_prob_y_K
         )
+
+
+class BinaryBalancedCNRELoss(CNRELoss):
+    r"""
+    TODO
+
+    Arguments:
+        estimator: The log ratio estimator :math:`h_\bold{w}(\theta, x)`.
+        num_classes: The number of classes :math:`K`.
+        gamma: The ratio of the prior distribution over possible classes, specifically
+            :math:`\gamma \coloneqq \frac{K p_{K}}{p_{0}}`.
+        lmbda: lagrange multiplier for balance condition
+    """
+
+    def __init__(self, estimator: nn.Module, num_classes: int, gamma: float, lmbda: float):
+        super().__init__(estimator, num_classes, gamma)
+        self.lmbda = lmbda
+
+    def forward(
+        self, theta: Tensor, x: Tensor
+    ) -> torch.Tensor:
+        r"""
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
+            x: The observation :math:`x`, with shape :math:`(N, L)`.
+
+        Returns:
+            The scalar loss :math:`\hat{\ell}_{\gamma, K}(\bold{w}) + \lambda \hat(\ell)_{B}(\bold{w})`.
+        """
+        log_r_y_K, log_r_y_0 = self._get_log_rs(theta, x)
+        log_prob_y_K, log_prob_y_0 = self._get_log_probs(log_r_y_K, log_r_y_0)
+
+        return -torch.mean(
+            (1 / (1 + self.gamma)) * log_prob_y_0 + \
+            (self.gamma / (1 + self.gamma)) * log_prob_y_K
+        ) + self.lmbda * \
+        (
+            torch.sigmoid(log_r_y_K[0, :]) + \
+            torch.sigmoid(log_r_y_0[0, :]) - 1
+        ).mean().square()
 
 
 class NSE(nn.Module):
