@@ -522,6 +522,100 @@ class AMNPELoss(nn.Module):
         return -log_prob.mean()
 
 
+class CNRELoss(nn.Module):
+    r"""Creates a module that calculates the loss :math:`l` of a NRE classifier
+    :math:`p(y \mid \theta, x)` from Contrastive Neural Ratio Estimation[1]. 
+    This is a cross-entropy loss (via ''multi-class sigmoid'' activation) for
+    1-out-of-`K + 1` classification.
+
+    TODO given pairs... module returns
+    Marginal probabilities p(y = k) \coloneqq p_{\joint} for $k \geq 1$ and 
+    {p(y = 0) \coloneqq p_{\marginal}}
+
+    Define \bTheta \coloneqq (\btheta_1, ..., \btheta_K) and 
+
+    .. math:: q_{\bw}(y = k \mid \bTheta, \bx) =
+        \begin{cases}
+            \frac{K}{K + \gamma \sum_{i=1}^{K} \exp \circ h_{\bw}(\btheta_i, \bx)} & k = 0 \\
+            \frac{\gamma \, \exp \circ h_{\bw}(\btheta_k,\bx))}{K + \gamma \sum_{i=1}^{K} \exp \circ h_{\bw}(\btheta_i,\bx)} & k = 1, \ldots, K.
+        \end{cases}.
+
+    .. math:: \hat{\ell}_{\gamma, K}(\bw) &\coloneqq - \frac{1}{B} \Bigg[ 
+        \frac{1}{1 + \gamma} 
+        \sum_{b=1}^{B} \log q_{\bw} \left(y = 0 \mid \bTheta^{(b)}, \bx^{(b)} \right)
+        + \frac{\gamma}{1 + \gamma}
+        \sum_{b'=1}^{B} \log q_{\bw} \left(y = K \mid \bTheta^{(b')}, \bx^{(b')} \right) 
+    \Bigg].
+
+    TODO rest of math
+
+    [1] _Contrastive Neural Ratio Estimation_, Benajmin Kurt Miller, et. al.,
+        NeurIPS 2022, https://arxiv.org/abs/2210.06170
+    
+    Arguments:
+        estimator: The log ratio estimator :math:`h_\bold{w}(\theta, x)`.
+        num_classes: The number of classes :math:`K`.
+        gamma: The ratio of the prior distribution over possible classes, specifically
+            :math:`\gamma \coloneqq \frac{K p_{K}}{p_{0}}`.
+    """
+
+    def __init__(self, estimator: nn.Module, num_classes: int, gamma: float):
+        super().__init__()
+        self.estimator = estimator
+        assert num_classes >= 1, f"num_classes = {num_classes} must be greater than 1."
+        self.num_classes = num_classes
+        assert gamma > 0, f"gamma = {gamma} must be greater than 0."
+        self.gamma = gamma
+    
+    def forward(
+        self, theta: Tensor, x: Tensor
+    ) -> torch.Tensor:
+        r"""
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
+            x: The observation :math:`x`, with shape :math:`(N, L)`.
+
+        Returns:
+            The scalar loss :math:`\hat{\ell}_{\gamma, K}(\bold{w})`.
+        """
+        assert theta.shape[0] == x.shape[0], "Batch sizes for theta and x must match."
+        batch_size = theta.shape[0]
+
+        inds = torch.arange(batch_size)
+        two_k_rolled_copies = torch.arange(2 * self.num_classes)
+        rolled_inds = (inds + two_k_rolled_copies[:, None]) % batch_size
+        log_r = self.estimator(theta[rolled_inds], x)
+        # index 0 of log_r is the theta-x-pair sampled from the joint p(theta,x)
+        # everything else is drawn marginally
+        log_r, log_r_prime = log_r.split((self.num_classes, self.num_classes))
+
+        dtype = log_r.dtype
+        device = log_r.device
+
+        # To use logsumexp, we extend the denominator logits with loggamma
+        loggamma = torch.tensor(self.gamma, dtype=dtype, device=device).log()
+        logK = torch.tensor(self.num_classes, dtype=dtype, device=device).log()
+        denominator_joint = torch.concat(
+            [loggamma + log_r, logK.expand((1, batch_size))],
+            dim=0,
+        )
+        denominator_marginal = torch.concat(
+            [loggamma + log_r_prime, logK.expand((1, batch_size))],
+            dim=0,
+        )
+
+        # Compute the contributions to the loss from each term in the classification.
+        log_prob_joint = (
+            loggamma + log_r[:, 0] - torch.logsumexp(denominator_joint, dim=0)
+        )
+        log_prob_marginal = logK - torch.logsumexp(denominator_marginal, dim=0)
+
+        return -torch.mean(
+            (1 / (1 + self.gamma)) * log_prob_marginal + \
+            (self.gamma / (1 + self.gamma)) * log_prob_joint
+        )
+
+
 class NSE(nn.Module):
     r"""Creates a neural score estimation (NSE) regression network.
 
