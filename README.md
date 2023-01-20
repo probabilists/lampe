@@ -1,4 +1,4 @@
-![LAMPE's banner](https://raw.githubusercontent.com/francois-rozet/lampe/master/sphinx/images/banner.svg)
+![LAMPE's banner](https://raw.githubusercontent.com/francois-rozet/lampe/master/docs/images/banner.svg)
 
 # LAMPE
 
@@ -22,8 +22,8 @@ pip install git+https://github.com/francois-rozet/lampe
 
 ## Documentation
 
-The documentation is made with [Sphinx](https://www.sphinx-doc.org) and [Furo](https://github.com/pradyunsg/furo) and is hosted at [francois-rozet.github.io/lampe](https://francois-rozet.github.io/lampe).
+The documentation is made with [Sphinx](https://www.sphinx-doc.org) and [Furo](https://github.com/pradyunsg/furo) and is hosted at [lampe.readthedocs.io](https://lampe.readthedocs.io).
 
 ## Contributing
 
-If you have a question, an issue or would like to contribute, please read our [contributing guidelines](CONTRIBUTING.md).
+If you have a question, an issue or would like to contribute, please read our [contributing guidelines](https://github.com/francois-rozet/lampe/blob/master/CONTRIBUTING.md).
