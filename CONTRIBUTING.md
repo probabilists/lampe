@@ -41,7 +41,7 @@ We use [pytest](https://docs.pytest.org) to test our code base. If your contribu
 pytest tests
 ```
 
-It is also recommended to ensure your code works as expected within toy experiments similar to the [tutorials](tutorials). When you submit a pull request, tests are automatically (upon approval) executed for several versions of Python and PyTorch.
+It is also recommended to ensure your code works as expected within toy experiments similar to the [tutorials](docs/tutorials). When you submit a pull request, tests are automatically (upon approval) executed for several versions of Python and PyTorch.
 
 ### Documentation
 
