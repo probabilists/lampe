@@ -26,7 +26,7 @@ from typing import *
 
 from zuko.distributions import Distribution, DiagNormal, NormalizingFlow
 from zuko.flows import FlowModule, MAF
-from zuko.transforms import FFJTransform
+from zuko.transforms import FreeFormJacobianTransform
 from zuko.utils import broadcast
 
 from .nn import MLP
@@ -571,15 +571,15 @@ class NSE(nn.Module):
         self,
         theta_dim: int,
         x_dim: int,
-        t_dim: int = 1,
+        t_dim: int = 3,
         build: Callable[[int, int], nn.Module] = MLP,
         **kwargs,
     ):
         super().__init__()
 
-        self.net = build(theta_dim + x_dim + t_dim * 2, theta_dim, **kwargs)
+        self.net = build(theta_dim + x_dim + 2 * t_dim, theta_dim, **kwargs)
 
-        self.register_buffer('periods', torch.arange(t_dim) + 1)
+        self.register_buffer('frequencies', 2 ** torch.arange(t_dim) * math.pi)
         self.register_buffer('zeros', torch.zeros(theta_dim))
         self.register_buffer('ones', torch.ones(theta_dim))
 
@@ -594,7 +594,7 @@ class NSE(nn.Module):
             The rescaled score :math:`s_\phi(\theta, x, t)`, with shape :math:`(*, D)`.
         """
 
-        t = self.periods * math.pi * t[..., None]
+        t = self.frequencies * t[..., None]
         t = torch.cat((t.cos(), t.sin()), dim=-1)
 
         theta, x, t = broadcast(theta, x, t, ignore=1)
@@ -608,10 +608,10 @@ class NSE(nn.Module):
         return 16.0 * t
 
     def ode(self, theta: Tensor, x: Tensor, t: Tensor) -> Tensor:
-        drift = -self.beta(t) / 2 * theta
-        diffusion = -self.beta(t) / 2 * (1 + self.alpha(t)) * self.forward(theta, x, t)
+        alpha, beta = self.alpha(t), self.beta(t)
+        score = self.forward(theta, x, t)
 
-        return drift + diffusion
+        return -beta / 2 * (theta + (1 + alpha) * score)
 
     def flow(self, x: Tensor) -> Distribution:
         r"""
@@ -621,22 +621,15 @@ class NSE(nn.Module):
         Returns:
             The posterior distribution :math:`p_\phi(\theta | x)` induced by the
             probability flow ODE.
-
-        Note:
-            The :func:`log_prob` method of the returned distribution is an unbiased
-            stochastic estimator of the true log-density. One should average over
-            a sufficient number of evaluations to attain small errors.
         """
 
-        batch_shape = x.shape[:-1]
-
         return NormalizingFlow(
-            transform=FFJTransform(
-                f=lambda theta, t: self.ode(theta, x, t),
+            transform=FreeFormJacobianTransform(
+                f=lambda t, theta: self.ode(theta, x, t),
                 time=x.new_tensor(1.0),
                 phi=(x, *self.parameters()),
             ),
-            base=DiagNormal(self.zeros, self.ones).expand(batch_shape),
+            base=DiagNormal(self.zeros, self.ones).expand(x.shape[:-1]),
         )
 
 
@@ -647,11 +640,11 @@ class NSELoss(nn.Module):
     Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math:: l = \frac{1}{N} \sum_{i = 1}^N
-        \| s_\phi(\theta'_i, x_i, t_i) + \varepsilon_i \|_2^2
+        \| s_\phi(\theta'_i, x_i, t_i) + z_i \|_2^2
 
-    where :math:`t_i \sim \mathcal{U}(0, 1)`, :math:`\varepsilon_i \sim \mathcal{N}(0,
+    where :math:`t_i \sim \mathcal{U}(0, 1)`, :math:`z_i \sim \mathcal{N}(0,
     I)` and :math:`\theta'_i = \sqrt{\alpha(t_i)} \, \theta_i + (1 - \alpha(t_i)) \,
-    \varepsilon_i`.
+    z_i`.
 
     Arguments:
         estimator: A regression network :math:`s_\phi(\theta, x, t)`.
@@ -675,12 +668,12 @@ class NSELoss(nn.Module):
         t = theta.new_empty(theta.shape[:-1]).uniform_(0, 1)
         alpha = self.estimator.alpha(t)[..., None]
 
-        epsilon = torch.randn_like(theta)
-        theta_prime = alpha.sqrt() * theta + (1 - alpha) * epsilon
+        z = torch.randn_like(theta)
+        theta_prime = alpha.sqrt() * theta + (1 - alpha) * z
 
         score = self.estimator(theta_prime, x, t)
 
-        return (score + epsilon).square().mean()
+        return (score + z).square().mean()
 
 
 class MetropolisHastings(object):

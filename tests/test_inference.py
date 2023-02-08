@@ -215,8 +215,7 @@ def test_NSE():
     assert theta.shape == (8, 32, 3)
 
     # Log-density
-    with torch.no_grad():
-        log_p = estimator.flow(x).log_prob(theta)
+    log_p = estimator.flow(x).log_prob(theta)
 
     assert log_p.shape == (8, 32)
 
