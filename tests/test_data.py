@@ -1,7 +1,6 @@
 r"""Tests for the lampe.data module."""
 
 import h5py
-import math
 import numpy as np
 import pytest
 import torch
@@ -71,6 +70,47 @@ def test_JointLoader():
     assert theta1.dtype == x1.dtype == torch.float
 
 
+def test_JointDataset():
+    theta, x = torch.randn(1024, 5), torch.randn(1024, 16, 2)
+
+    # Index
+    dataset = JointDataset(theta, x)
+
+    for i in (0, 1, 2, 8, 32, 128, -1):
+        theta_i, x_i = dataset[i]
+
+        assert (theta_i == theta[i]).all()
+        assert (x_i == x[i]).all()
+
+    # Iter
+    for i, (theta_i, x_i) in enumerate(dataset):
+        assert (theta_i == theta[i]).all()
+        assert (x_i == x[i]).all()
+
+    assert i == len(dataset) - 1 == len(theta) - 1
+
+    # Shuffle
+    dataset = JointDataset(theta, x, batch_size=256, shuffle=True)
+
+    it = iter(dataset)
+    theta1, x1 = next(it)
+    theta2, x2 = next(it)
+
+    assert len(theta1) == len(theta2) == 256
+    assert len(x1) == len(x2) == 256
+
+    theta3, x3 = torch.cat((theta1, theta2)), torch.cat((x1, x2))
+
+    match = (theta3[:, None, :] == theta).all(dim=-1)
+
+    assert (match.sum(dim=0) <= 1).all()
+    assert (match.sum(dim=-1) == 1).all()
+
+    _, index = torch.nonzero(match, as_tuple=True)
+
+    assert (x3 == x[index]).all()
+
+
 def test_H5Dataset(tmp_path):
     prior = torch.distributions.Normal(torch.zeros(3), torch.ones(3))
     simulator = lambda theta: torch.repeat_interleave(theta, 2, dim=-1)
@@ -83,7 +123,7 @@ def test_H5Dataset(tmp_path):
 
     H5Dataset.store(pairs, tmp_path / 'data_1.h5', size=4096)
     H5Dataset.store(iter(pairs), tmp_path / 'data_2.h5', size=4096)
-    H5Dataset.store(pairs, tmp_path / 'data_3.h5', size=256)
+    H5Dataset.store([(theta, x)], tmp_path / 'data_3.h5', size=256)
 
     with pytest.raises(FileExistsError):
         H5Dataset.store(pairs, tmp_path / 'data_1.h5', size=4096)
@@ -97,29 +137,28 @@ def test_H5Dataset(tmp_path):
         assert len(dataset) in {256, 4096}
 
         ## __getitem__
-        for i in map(lambda x: 2**x, range(int(math.log2(len(dataset))))):
+        for i in (0, 1, 2, 8, 32, 128):
             theta_i, x_i = dataset[i]
 
-            assert theta_i.shape == (3,) and x_i.shape == (6,)
             assert (theta_i == theta[i]).all()
             assert (x_i == x[i]).all()
 
-        ## __item__
+        ## __iter__
         for i, (theta_i, x_i) in enumerate(dataset):
             assert (theta_i == theta[i]).all()
             assert (x_i == x[i]).all()
 
         assert i == len(dataset) - 1
 
-    ## Shuffle
+    # Shuffle
     dataset = H5Dataset(tmp_path / 'data_1.h5', batch_size=256, shuffle=True)
 
     it = iter(dataset)
     theta1, x1 = next(it)
     theta2, x2 = next(it)
 
-    assert theta1.shape == (256, 3) and x1.shape == (256, 6)
-    assert theta2.shape == (256, 3) and x2.shape == (256, 6)
+    assert len(theta1) == len(theta2) == 256
+    assert len(x1) == len(x2) == 256
 
     theta3, x3 = torch.cat((theta1, theta2)), torch.cat((x1, x2))
 
@@ -131,3 +170,9 @@ def test_H5Dataset(tmp_path):
     _, index = torch.nonzero(match, as_tuple=True)
 
     assert (x3 == x[index]).all()
+
+    # Load in memory
+    new = dataset.to_memory()
+
+    assert len(dataset) == len(new)
+    assert isinstance(new, JointDataset)

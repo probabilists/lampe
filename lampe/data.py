@@ -1,6 +1,6 @@
 r"""Datasets and data loaders."""
 
-__all__ = ['JointLoader', 'H5Dataset']
+__all__ = ['JointLoader', 'JointDataset', 'H5Dataset']
 
 import h5py
 import numpy as np
@@ -8,7 +8,6 @@ import random
 import torch
 
 from bisect import bisect
-from contextlib import ExitStack
 from numpy import ndarray as Array
 from pathlib import Path
 from torch import Tensor, Size
@@ -95,6 +94,69 @@ class JointLoader(DataLoader):
         )
 
 
+class JointDataset(Dataset):
+    r"""Creates an in-memory dataset of pairs :math:`(\theta, x)`.
+
+    :class:`JointDataset` supports indexing and slicing, but also implements a custom
+    :meth:`__iter__` method which supports batching and shuffling.
+
+    Arguments:
+        theta: A tensor of parameters :math:`\theta`.
+        x: A tensor of observations :math:`x`.
+        batch_size: The size of the batches.
+        shuffle: Whether the pairs are shuffled or not when iterating.
+
+    Example:
+        >>> dataset = JointDataset(theta, x, batch_size=256, shuffle=True)
+        >>> theta, x = dataset[42:69]
+        >>> theta.shape
+        torch.Size([27, 5])
+        >>> for theta, x in dataset:
+        ...     theta, x = theta.cuda(), x.cuda()
+        ...     something(theta, x)
+    """
+
+    def __init__(
+        self,
+        theta: Tensor,
+        x: Tensor,
+        batch_size: int = None,
+        shuffle: bool = False,
+    ):
+        super().__init__()
+
+        assert len(theta) == len(x)
+
+        self.theta = torch.as_tensor(theta)
+        self.x = torch.as_tensor(x)
+
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+    def __len__(self) -> int:
+        return len(self.theta)
+
+    def __getitem__(self, i: Union[int, slice]) -> Tuple[Tensor, Tensor]:
+        return self.theta[i], self.x[i]
+
+    def __iter__(self) -> Iterator[Tuple[Tensor, Tensor]]:
+        if self.shuffle:
+            order = torch.randperm(len(self))
+
+            if self.batch_size is None:
+                return (self[i] for i in order)
+            else:
+                return (self[i] for i in order.split(self.batch_size))
+        else:
+            if self.batch_size is None:
+                return zip(self.theta, self.x)
+            else:
+                return zip(
+                    self.theta.split(self.batch_size),
+                    self.x.split(self.batch_size),
+                )
+
+
 class H5Dataset(IterableDataset):
     r"""Creates an iterable dataset of pairs :math:`(\theta, x)` from HDF5 files.
 
@@ -140,11 +202,9 @@ class H5Dataset(IterableDataset):
     ):
         super().__init__()
 
-        self.files = files
-
-        with ExitStack() as stack:
-            files = map(stack.enter_context, map(h5py.File, self.files))
-            self.cumsizes = np.cumsum([len(f['x']) for f in files])
+        self.files = [h5py.File(f, mode='r') for f in files]
+        self.sizes = [f['theta'].shape[0] for f in self.files]
+        self.cumsizes = np.cumsum(self.sizes)
 
         self.batch_size = batch_size
         self.chunk_size = chunk_size
@@ -160,47 +220,61 @@ class H5Dataset(IterableDataset):
         if j > 0:
             i = i - self.cumsizes[j - 1]
 
-        with h5py.File(self.files[j]) as f:
-            theta, x = f['theta'][i], f['x'][i]
+        f = self.files[j]
+        theta, x = f['theta'][i], f['x'][i]
 
         return torch.from_numpy(theta), torch.from_numpy(x)
 
     def __iter__(self) -> Iterator[Tuple[Tensor, Tensor]]:
-        with ExitStack() as stack:
-            files = list(map(stack.enter_context, map(h5py.File, self.files)))
+        chunks = torch.tensor([
+            (i, j, j + self.chunk_size)
+            for i, size in enumerate(self.sizes)
+            for j in range(0, size, self.chunk_size)
+        ])
 
-            chunks = torch.tensor([
-                (i, j, j + self.chunk_size)
-                for i, f in enumerate(files)
-                for j in range(0, len(f['x']), self.chunk_size)
-            ])
+        if self.shuffle:
+            order = torch.randperm(len(chunks))
+            chunks = chunks[order]
 
+        for slices in chunks.split(self.chunk_step):
+            slices = sorted(slices.tolist())
+
+            # Load
+            theta = np.concatenate([self.files[i]['theta'][j:k] for i, j, k in slices])
+            x = np.concatenate([self.files[i]['x'][j:k] for i, j, k in slices])
+
+            theta, x = torch.from_numpy(theta), torch.from_numpy(x)
+
+            # Shuffle
             if self.shuffle:
-                order = torch.randperm(len(chunks))
-                chunks = chunks[order]
+                order = torch.randperm(len(theta))
+                theta, x = theta[order], x[order]
 
-            for slices in chunks.split(self.chunk_step):
-                slices = sorted(slices.tolist())
+            # Batch
+            if self.batch_size is None:
+                yield from zip(theta, x)
+            else:
+                yield from zip(
+                    theta.split(self.batch_size),
+                    x.split(self.batch_size),
+                )
 
-                # Load
-                theta = np.concatenate([files[i]['theta'][j:k] for i, j, k in slices])
-                x = np.concatenate([files[i]['x'][j:k] for i, j, k in slices])
+    def to_memory(self) -> JointDataset:
+        r"""Loads all pairs in memory and returns them as a :class:`JointDataset`.
 
-                theta, x = torch.from_numpy(theta), torch.from_numpy(x)
+        Example:
+            >>> dataset = H5Dataset('data.h5').to_memory()
+        """
 
-                # Shuffle
-                if self.shuffle:
-                    order = torch.randperm(len(x))
-                    theta, x = theta[order], x[order]
+        theta = np.concatenate([f['theta'][:] for f in self.files])
+        x = np.concatenate([f['x'][:] for f in self.files])
 
-                # Batch
-                if self.batch_size is None:
-                    yield from zip(theta, x)
-                else:
-                    yield from zip(
-                        theta.split(self.batch_size),
-                        x.split(self.batch_size),
-                    )
+        return JointDataset(
+            theta,
+            x,
+            batch_size=self.batch_size,
+            shuffle=self.shuffle,
+        )
 
     @staticmethod
     def store(
