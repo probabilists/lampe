@@ -71,7 +71,8 @@ class NRE(nn.Module):
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
-        build: The network constructor (e.g. :class:`lampe.nn.ResMLP`).
+        build: The network constructor (e.g. :class:`lampe.nn.ResMLP`). It takes the
+            number of input and output features as positional arguments.
         kwargs: Keyword arguments passed to the constructor.
     """
 
@@ -343,7 +344,8 @@ class NPE(nn.Module):
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
-        build: The flow constructor (e.g. :class:`zuko.flows.NSF`).
+        build: The flow constructor (e.g. :class:`zuko.flows.NSF`). It takes the
+            number of sample and context features as positional arguments.
         kwargs: Keyword arguments passed to the constructor.
     """
 
@@ -562,8 +564,9 @@ class NSE(nn.Module):
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
-        t_dim: The dimensionality of the time embedding.
-        build: The network constructor (e.g. :class:`lampe.nn.ResMLP`).
+        freqs: The number of time embedding frequencies.
+        build: The network constructor (e.g. :class:`lampe.nn.ResMLP`). It takes the
+            number of input and output features as positional arguments.
         kwargs: Keyword arguments passed to the constructor.
     """
 
@@ -571,15 +574,15 @@ class NSE(nn.Module):
         self,
         theta_dim: int,
         x_dim: int,
-        t_dim: int = 3,
+        freqs: int = 3,
         build: Callable[[int, int], nn.Module] = MLP,
         **kwargs,
     ):
         super().__init__()
 
-        self.net = build(theta_dim + x_dim + 2 * t_dim, theta_dim, **kwargs)
+        self.net = build(theta_dim + x_dim + 2 * freqs, theta_dim, **kwargs)
 
-        self.register_buffer('frequencies', 2 ** torch.arange(t_dim) * math.pi)
+        self.register_buffer('freqs', torch.arange(1, freqs + 1) * math.pi)
         self.register_buffer('zeros', torch.zeros(theta_dim))
         self.register_buffer('ones', torch.ones(theta_dim))
 
@@ -594,7 +597,7 @@ class NSE(nn.Module):
             The rescaled score :math:`s_\phi(\theta, x, t)`, with shape :math:`(*, D)`.
         """
 
-        t = self.frequencies * t[..., None]
+        t = self.freqs * t[..., None]
         t = torch.cat((t.cos(), t.sin()), dim=-1)
 
         theta, x, t = broadcast(theta, x, t, ignore=1)
