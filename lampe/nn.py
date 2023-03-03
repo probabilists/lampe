@@ -68,14 +68,14 @@ class ResMLP(nn.Sequential):
         self,
         in_features: int,
         out_features: int,
-        hidden_features: List[int] = [64, 64],
+        hidden_features: Sequence[int] = (64, 64),
         **kwargs,
     ):
         blocks = []
 
         for before, after in zip(
-            [in_features] + hidden_features,
-            hidden_features + [out_features],
+            (in_features, *hidden_features),
+            (*hidden_features, out_features),
         ):
             if after != before:
                 blocks.append(nn.Linear(before, after))

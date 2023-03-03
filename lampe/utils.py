@@ -56,7 +56,7 @@ class GDStep(object):
 def gridapply(
     f: Callable[[Tensor], Tensor],
     domain: Tuple[Tensor, Tensor],
-    bins: Union[int, List[int]] = 128,
+    bins: Union[int, Sequence[int]] = 128,
     batch_size: int = 4096,
 ) -> Tuple[Tensor, Tensor]:
     r"""Evaluates a function :math:`f(x)` over a multi-dimensional domain split
