@@ -634,11 +634,11 @@ class CNRELoss(nn.Module):
         # To use logsumexp, we extend the denominator logits with loggamma
         loggamma = torch.tensor(self.gamma, dtype=dtype, device=device).log()
         logK = torch.tensor(self.num_classes, dtype=dtype, device=device).log()
-        denominator_y_K = torch.concat(
+        denominator_y_K = torch.cat(
             [loggamma + log_r_y_K, logK.expand((1, batch_size))],
             dim=0,
         )
-        denominator_y_0 = torch.concat(
+        denominator_y_0 = torch.cat(
             [loggamma + log_r_y_0, logK.expand((1, batch_size))],
             dim=0,
         )

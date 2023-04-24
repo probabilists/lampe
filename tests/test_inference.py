@@ -55,6 +55,30 @@ def test_BNRELoss():
     assert l.requires_grad
 
 
+def test_CNRELoss():
+    estimator = NRE(3, 5)
+    loss = CNRELoss(estimator, 2, 1.0)
+
+    theta, x = randn(256, 3), randn(256, 5)
+
+    l = loss(theta, x)
+
+    assert l.shape == ()
+    assert l.requires_grad
+
+
+def test_BinaryBalancedCNRELoss():
+    estimator = NRE(3, 5)
+    loss = BinaryBalancedCNRELoss(estimator, 2, 1.0, 1.0)
+
+    theta, x = randn(256, 3), randn(256, 5)
+
+    l = loss(theta, x)
+
+    assert l.shape == ()
+    assert l.requires_grad
+
+
 def test_AMNRE():
     estimator = AMNRE(3, 5)
 
