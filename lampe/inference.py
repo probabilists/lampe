@@ -4,6 +4,8 @@ __all__ = [
     'NRE',
     'NRELoss',
     'BNRELoss',
+    'CNRELoss',
+    'BinaryBalancedCNRELoss',
     'AMNRE',
     'AMNRELoss',
     'NPE',
@@ -523,40 +525,54 @@ class AMNPELoss(nn.Module):
 
 
 class CNRELoss(nn.Module):
-    r"""Creates a module that calculates the loss :math:`l` of a NRE classifier
-    :math:`p(y \mid \theta, x)` from Contrastive Neural Ratio Estimation[1]. 
+    r"""Creates a module that calculates the loss :math:`l_{\gamma, K}` of a 
+    NRE classifier :math:`q_{w}(y \mid \theta, x)` from Contrastive Neural 
+    Ratio Estimation [1]. 
+    
     This is a cross-entropy loss (via ''multi-class sigmoid'' activation) for
-    1-out-of-`K + 1` classification.
+    1-out-of-`K + 1` classification. It requires samples:
+    :math:`\Theta^{(i)} \coloneqq (\theta_{1}^{(i)}, \ldots, \theta_{K}^{(i)}) \sim p(\theta)`,
+    :math:`x^{(i)} \sim p(x \mid \theta_k)`,
+    :math:`\Theta^{(i')} \coloneqq (\theta_{1}^{(i')}, \ldots, \theta_{K}^{(i')}) \sim p(\theta)`,
+    and :math:`x^{(i')} \sim p(x)`
+    with :math:`i = 1, 2, \ldots, N` and :math:`i' = 1, 2, \ldots, N`.
+    
+    In practice, the independent samples are drawn from applying `torch.roll` 
+    :math:`2K - 1` times to a batch of :math:`N` pairs 
+    :math:`(\theta^{(n)}, x^{(n)}) \sim p(\theta, x)`.
+    
+    Let :math:`\Theta \coloneqq (\theta_1, ..., \theta_K)`, we define the 
+    classifier:
 
-    TODO given pairs... module returns
-    Marginal probabilities p(y = k) \coloneqq p_{\joint} for $k \geq 1$ and 
-    {p(y = 0) \coloneqq p_{\marginal}}
-
-    Define \bTheta \coloneqq (\btheta_1, ..., \btheta_K) and 
-
-    .. math:: q_{\bw}(y = k \mid \bTheta, \bx) =
+    .. math::
+        q_{w}(y = k \mid \Theta, \bx) \coloneqq
         \begin{cases}
-            \frac{K}{K + \gamma \sum_{i=1}^{K} \exp \circ h_{\bw}(\btheta_i, \bx)} & k = 0 \\
-            \frac{\gamma \, \exp \circ h_{\bw}(\btheta_k,\bx))}{K + \gamma \sum_{i=1}^{K} \exp \circ h_{\bw}(\btheta_i,\bx)} & k = 1, \ldots, K.
-        \end{cases}.
+            \frac{K}{K + \gamma \sum_{j=1}^{K} \exp \circ h_{w}(\theta_j, \bx)} & k = 0 \\
+            \frac{\gamma \, \exp \circ h_{w}(\theta_k,\bx))}{K + \gamma \sum_{j=1}^{K} \exp \circ h_{w}(\theta_j,\bx)} & k = 1, \ldots, K.
+        \end{cases}
+    
+    where :math:`h_{w}` is a neural network with weights :math:`w` and 
+    :math:`\gamma \coloneqq \frac{K p(y=k)}{p(y=1)}` defines the target
+    distribution over :math:`y`.
+    
+    The module returns
 
-    .. math:: \hat{\ell}_{\gamma, K}(\bw) &\coloneqq - \frac{1}{B} \Bigg[ 
-        \frac{1}{1 + \gamma} 
-        \sum_{b=1}^{B} \log q_{\bw} \left(y = 0 \mid \bTheta^{(b)}, \bx^{(b)} \right)
-        + \frac{\gamma}{1 + \gamma}
-        \sum_{b'=1}^{B} \log q_{\bw} \left(y = K \mid \bTheta^{(b')}, \bx^{(b')} \right) 
-    \Bigg].
+    .. math::
+        \hat{\ell}_{\gamma, K}(w) & \coloneqq 
+            -\frac{1}{N} \Bigg[
+                \frac{1}{1 + \gamma} \frac{1}{N} \sum_{i = 1}^{N} q_{w}(y = 0 \mid \Theta^{(i)}, \bx^{(i)})
+                \frac{\gamma}{1 + \gamma} \frac{1}{N} \sum_{i' = 1}^{N} q_{w}(y = K \mid \Theta^{(i')}, \bx^{(i')})
+            \Bigg].
 
-    TODO rest of math
-
-    [1] _Contrastive Neural Ratio Estimation_, Benajmin Kurt Miller, et. al.,
-        NeurIPS 2022, https://arxiv.org/abs/2210.06170
+    References:
+        [1] Benajmin Kurt Miller, et. al., _Contrastive Neural Ratio Estimation_,
+            NeurIPS 2022, https://arxiv.org/abs/2210.06170
     
     Arguments:
-        estimator: The log ratio estimator :math:`h_\bold{w}(\theta, x)`.
+        estimator: The log ratio estimator :math:`h_w(\theta, x)`.
         num_classes: The number of classes :math:`K`.
-        gamma: The ratio of the prior distribution over possible classes, specifically
-            :math:`\gamma \coloneqq \frac{K p_{K}}{p_{0}}`.
+        gamma: The ratio of the distribution over possible classes, specifically
+            :math:`\gamma \coloneqq \frac{K p(y=k)}{p(y=0)}`.
     """
 
     def __init__(self, estimator: nn.Module, num_classes: int, gamma: float):
@@ -603,8 +619,8 @@ class CNRELoss(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Arguments:
-            log_r_y_K: log_r_y_K the log ratios computed for y=K with shape :math:`(K, N)`.
-            log_r_y_0: log_r_y_0 the log ratios computed for y=0 with shape :math:`(K, N)`.
+            log_r_y_K: the log ratios computed for y=K with shape :math:`(K, N)`.
+            log_r_y_0: the log ratios computed for y=0 with shape :math:`(K, N)`.
 
         Returns:
             (log_prob_y_K, log_prob_y_0): log_prob_y_K is the classification log prob for y=K,
@@ -644,7 +660,7 @@ class CNRELoss(nn.Module):
             x: The observation :math:`x`, with shape :math:`(N, L)`.
 
         Returns:
-            The scalar loss :math:`\hat{\ell}_{\gamma, K}(\bold{w})`.
+            The scalar loss :math:`\hat{\ell}_{\gamma, K}(w)`.
         """
         log_r_y_K, log_r_y_0 = self._get_log_rs(theta, x)
         log_prob_y_K, log_prob_y_0 = self._get_log_probs(log_r_y_K, log_r_y_0)
@@ -656,14 +672,38 @@ class CNRELoss(nn.Module):
 
 
 class BinaryBalancedCNRELoss(CNRELoss):
-    r"""
-    TODO
+    r"""Creates a module that calculates the loss :math:`l_{\gamma, K, \lambda}` 
+    of a NRE classifier :math:`q_{w}(y \mid \theta, x)` from Contrastive Neural 
+    Ratio Estimation [1], but regularized by the balance criterion from 
+    Balancing Simulation-based Inference for Conservative Posteriors [1]. 
+    Further details in Appendix B of [1].
+
+    Given a batch of :math:`N` pairs :math:`(\theta^{(n)}, x^{(n)})`, the module 
+    returns
+    :math:`\hat{\ell}_{\gamma, K}(w) + \lambda \hat{\ell}_{B}(w)`. 
+    The balance criterion is defined
+
+    .. math::
+        \hat{\ell}_{B}(w) \coloneqq
+            \left(1 - \frac{1}{N} \sum_{i = n}^{N}
+            \sigma \circ h_{w}(\theta^{(n)}, x^{(n)}) + 
+            \sigma \circ h_{w}(\theta^{(n')}, x^{(n')}) \right)^2
+
+    where :math:`\sigma` is the logistic sigmoid, :math:`h_{w}` is the neural 
+    network, :math:`\theta^{(n)}, x^{(n)} \sim p(\theta, x)` and 
+    :math:`\theta^{(n')}, x^{(n')} \sim p(\theta)p(x)`. In practice, the 
+    independent samples are drawn from applying `torch.roll` to the batch.
+    
+    References:
+        [1] Arnaud Delaunoy, Benjamin Kurt Miller, et. al., 
+            _Balancing Simulation-based Inference for Conservative Posteriors_,
+            https://arxiv.org/abs/2304.10978
 
     Arguments:
-        estimator: The log ratio estimator :math:`h_\bold{w}(\theta, x)`.
+        estimator: The log ratio estimator :math:`h_w(\theta, x)`.
         num_classes: The number of classes :math:`K`.
-        gamma: The ratio of the prior distribution over possible classes, specifically
-            :math:`\gamma \coloneqq \frac{K p_{K}}{p_{0}}`.
+        gamma: The ratio of the distribution over possible classes, specifically
+            :math:`\gamma \coloneqq \frac{K p(y=k)}{p(y=0)}`.
         lmbda: lagrange multiplier for balance condition
     """
 
@@ -680,7 +720,7 @@ class BinaryBalancedCNRELoss(CNRELoss):
             x: The observation :math:`x`, with shape :math:`(N, L)`.
 
         Returns:
-            The scalar loss :math:`\hat{\ell}_{\gamma, K}(\bold{w}) + \lambda \hat(\ell)_{B}(\bold{w})`.
+            The scalar loss :math:`\hat{\ell}_{\gamma, K}(w) + \lambda \hat(\ell)_{B}(w)`.
         """
         log_r_y_K, log_r_y_0 = self._get_log_rs(theta, x)
         log_prob_y_K, log_prob_y_0 = self._get_log_probs(log_r_y_K, log_r_y_0)
