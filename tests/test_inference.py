@@ -127,7 +127,7 @@ def test_NPE():
 
     # Sample
     x = randn(32, 5)
-    theta = estimator.sample(x, (8,))
+    theta = estimator.flow(x).sample((8,))
 
     assert theta.shape == (8, 32, 3)
 
@@ -144,8 +144,8 @@ def test_NPELoss():
     assert l.requires_grad
 
 
-def test_NSE():
-    estimator = NSE(3, 5)
+def test_FMPE():
+    estimator = FMPE(3, 5)
 
     # Non-batched
     theta, x, t = randn(3), randn(5), torch.tensor(0.5)
@@ -161,7 +161,7 @@ def test_NSE():
     assert score.shape == (256, 3)
 
     # Mixed
-    theta, x, t = randn(256, 3), randn(5), randn(1)
+    theta, x, t = randn(256, 3), randn(5), randn(())
     score = estimator(theta, x, t)
 
     assert score.shape == (256, 3)
@@ -178,9 +178,9 @@ def test_NSE():
     assert log_p.shape == (8, 32)
 
 
-def test_NSELoss():
-    estimator = NSE(3, 5)
-    loss = NSELoss(estimator)
+def test_FMPELoss():
+    estimator = FMPE(3, 5)
+    loss = FMPELoss(estimator)
 
     theta, x = randn(256, 3), randn(256, 5)
 
