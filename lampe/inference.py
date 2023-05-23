@@ -8,8 +8,6 @@ __all__ = [
     'AMNRELoss',
     'NPE',
     'NPELoss',
-    'AMNPE',
-    'AMNPELoss',
     'NSE',
     'NSELoss',
     'MetropolisHastings',
@@ -419,107 +417,6 @@ class NPELoss(nn.Module):
         log_p = self.estimator(theta, x)
 
         return -log_p.mean()
-
-
-class AMNPE(NPE):
-    r"""Creates an arbitrary marginal neural posterior estimation (AMNPE)
-    normalizing flow.
-
-    TODO
-
-    Arguments:
-        theta_dim: The dimensionality :math:`D` of the parameter space.
-        x_dim: The dimensionality :math:`L` of the observation space.
-        args: Positional arguments passed to :class:`NPE`.
-        kwargs: Keyword arguments passed to :class:`NPE`.
-    """
-
-    def __init__(
-        self,
-        theta_dim: int,
-        x_dim: int,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(theta_dim, x_dim + theta_dim, *args, **kwargs)
-
-    def forward(self, theta: Tensor, x: Tensor, b: BoolTensor) -> Tensor:
-        r"""
-        Arguments:
-            theta: The parameters :math:`\theta`, with shape :math:`(*, D)`.
-            x: The observation :math:`x`, with shape :math:`(*, L)`.
-            b: A binary mask :math:`b`, with shape :math:`(*, D)`.
-
-        Returns:
-            The log-density :math:`\log p_\phi(\theta | x, b)`, with shape :math:`(*,)`.
-        """
-
-        theta, x, b = broadcast(theta, x, b * 2.0 - 1.0, ignore=1)
-
-        return self.flow(torch.cat((x, b), dim=-1)).log_prob(theta)
-
-    def sample(self, x: Tensor, b: BoolTensor, shape: Size = ()) -> Tensor:
-        r"""
-        Arguments:
-            x: The observation :math:`x`, with shape :math:`(*, L)`.
-            b: A binary mask :math:`b`, with shape :math:`(D,)`.
-            shape: The shape :math:`S` of the samples.
-
-        Returns:
-            The samples :math:`\theta_b \sim p_\phi(\theta_b | x, b)`,
-            with shape :math:`S + (*, D)`.
-        """
-
-        x, b_ = broadcast(x, b * 2.0 - 1.0, ignore=1)
-
-        with torch.no_grad():
-            return self.flow(torch.cat((x, b_), dim=-1)).sample(shape)[..., b]
-
-
-class AMNPELoss(nn.Module):
-    r"""Creates a module that calculates the negative log-likelihood loss for an AMNPE
-    normalizing flow.
-
-    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
-
-    .. math:: l = \frac{1}{N} \sum_{i = 1}^N
-        -\log p_\phi(\theta_i \odot b_i + \theta_{i + 1} \odot (1 - b_i) | x_i, b_i)
-
-    where the binary masks :math:`b_i` are sampled from a distribution :math:`P(b)`.
-
-    Arguments:
-        estimator: A normalizing flow :math:`p_\phi(\theta | x, b)`.
-        mask_dist: A binary mask distribution :math:`P(b)`.
-    """
-
-    def __init__(
-        self,
-        estimator: nn.Module,
-        mask_dist: Distribution,
-    ):
-        super().__init__()
-
-        self.estimator = estimator
-        self.mask_dist = mask_dist
-
-    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        r"""
-        Arguments:
-            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
-            x: The observation :math:`x`, with shape :math:`(N, L)`.
-
-        Returns:
-            The scalar loss :math:`l`.
-        """
-
-        theta_prime = torch.roll(theta, 1, dims=0)
-
-        b = self.mask_dist.sample(theta.shape[:-1])
-        theta = torch.where(b, theta, theta_prime)
-
-        log_prob = self.estimator(theta, x, b)
-
-        return -log_prob.mean()
 
 
 class NSE(nn.Module):
