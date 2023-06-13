@@ -77,7 +77,7 @@ class JointLoader(DataLoader):
         self,
         prior: Distribution,
         simulator: Callable,
-        batch_size: int = 2**10,  # 1024
+        batch_size: int = 2**8,  # 256
         vectorized: bool = False,
         numpy: bool = False,
         **kwargs,
@@ -158,12 +158,11 @@ class JointDataset(Dataset):
 
 
 class H5Dataset(IterableDataset):
-    r"""Creates an iterable dataset of pairs :math:`(\theta, x)` from HDF5 files.
+    r"""Creates an iterable dataset of pairs :math:`(\theta, x)` from an HDF5 file.
 
     As it can be slow to load pairs from disk one by one, :class:`H5Dataset` implements
     a custom :meth:`__iter__` method that loads several contiguous chunks of pairs at
-    once and shuffles their concatenation before yielding the pairs one by one,
-    unless a batch size is provided.
+    once and shuffles their concatenation before yielding the pairs.
 
     :class:`H5Dataset` also implements the :meth:`__len__` and :meth:`__getitem__`
     methods for convenience.
@@ -176,7 +175,7 @@ class H5Dataset(IterableDataset):
         necessary to wrap the dataset in a :class:`torch.utils.data.DataLoader`.
 
     Arguments:
-        files: HDF5 files containing pairs :math:`(\theta, x)`.
+        file: An HDF5 file containing pairs :math:`(\theta, x)`.
         batch_size: The size of the batches.
         chunk_size: The size of the contiguous chunks.
         chunk_step: The number of chunks loaded at once.
@@ -194,17 +193,15 @@ class H5Dataset(IterableDataset):
 
     def __init__(
         self,
-        *files: Union[str, Path],
+        file: Union[str, Path],
         batch_size: int = None,
-        chunk_size: int = 2**10,  # 1024
+        chunk_size: int = 2**8,  # 256
         chunk_step: str = 2**8,  # 256
         shuffle: bool = False,
     ):
         super().__init__()
 
-        self.files = [h5py.File(f, mode='r') for f in files]
-        self.sizes = [f['theta'].shape[0] for f in self.files]
-        self.cumsizes = np.cumsum(self.sizes)
+        self.file = h5py.File(file, mode='r')
 
         self.batch_size = batch_size
         self.chunk_size = chunk_size
@@ -212,24 +209,17 @@ class H5Dataset(IterableDataset):
         self.shuffle = shuffle
 
     def __len__(self) -> int:
-        return self.cumsizes[-1]
+        return len(self.file['theta'])
 
-    def __getitem__(self, i: int) -> Tuple[Tensor, Tensor]:
-        i = i % len(self)
-        j = bisect(self.cumsizes, i)
-        if j > 0:
-            i = i - self.cumsizes[j - 1]
-
-        f = self.files[j]
-        theta, x = f['theta'][i], f['x'][i]
+    def __getitem__(self, i: Union[int, slice]) -> Tuple[Tensor, Tensor]:
+        theta, x = self.file['theta'][i], self.file['x'][i]
 
         return torch.from_numpy(theta), torch.from_numpy(x)
 
     def __iter__(self) -> Iterator[Tuple[Tensor, Tensor]]:
         chunks = torch.tensor([
-            (i, j, j + self.chunk_size)
-            for i, size in enumerate(self.sizes)
-            for j in range(0, size, self.chunk_size)
+            (i, i + self.chunk_size)
+            for i in range(0, len(self), self.chunk_size)
         ])
 
         if self.shuffle:
@@ -237,11 +227,19 @@ class H5Dataset(IterableDataset):
             chunks = chunks[order]
 
         for slices in chunks.split(self.chunk_step):
+            # Merge contiguous slices
             slices = sorted(slices.tolist())
+            stack = []
+
+            for s in slices:
+                if stack and stack[-1][-1] == s[0]:
+                    stack[-1][-1] = s[-1]
+                else:
+                    stack.append(s)
 
             # Load
-            theta = np.concatenate([self.files[i]['theta'][j:k] for i, j, k in slices])
-            x = np.concatenate([self.files[i]['x'][j:k] for i, j, k in slices])
+            theta = np.concatenate([self.file['theta'][i:j] for i, j in stack])
+            x = np.concatenate([self.file['x'][i:j] for i, j in stack])
 
             theta, x = torch.from_numpy(theta), torch.from_numpy(x)
 
@@ -266,12 +264,9 @@ class H5Dataset(IterableDataset):
             >>> dataset = H5Dataset('data.h5').to_memory()
         """
 
-        theta = np.concatenate([f['theta'][:] for f in self.files])
-        x = np.concatenate([f['x'][:] for f in self.files])
-
         return JointDataset(
-            theta,
-            x,
+            self.file['theta'][:],
+            self.file['x'][:],
             batch_size=self.batch_size,
             shuffle=self.shuffle,
         )
