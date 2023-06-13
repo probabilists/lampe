@@ -5,7 +5,7 @@ __all__ = [
     'NRELoss',
     'BNRELoss',
     'CNRELoss',
-    'BinaryBalancedCNRELoss',
+    'BCNRELoss',
     'AMNRE',
     'AMNRELoss',
     'NPE',
@@ -35,7 +35,7 @@ from .nn import MLP
 
 
 class NRE(nn.Module):
-    r"""Creates a neural ratio estimation (NRE) classifier network.
+    r"""Creates a neural ratio estimation (NRE) network.
 
     The principle of neural ratio estimation is to train a classifier network
     :math:`d_\phi(\theta, x)` to discriminate between pairs :math:`(\theta, x)` equally
@@ -105,9 +105,9 @@ class NRE(nn.Module):
 
 
 class NRELoss(nn.Module):
-    r"""Creates a module that calculates the cross-entropy loss for a NRE classifier.
+    r"""Creates a module that calculates the cross-entropy loss for a NRE network.
 
-    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
+    Given a batch of :math:`N \geq 2` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math:: l = \frac{1}{2N} \sum_{i = 1}^N
         \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i))
@@ -115,7 +115,7 @@ class NRELoss(nn.Module):
     where :math:`\ell(p) = -\log p` is the negative log-likelihood.
 
     Arguments:
-        estimator: A classifier network :math:`d_\phi(\theta, x)`.
+        estimator: A log-ratio network :math:`\log r_\phi(\theta, x)`.
     """
 
     def __init__(self, estimator: nn.Module):
@@ -148,9 +148,9 @@ class NRELoss(nn.Module):
 
 class BNRELoss(nn.Module):
     r"""Creates a module that calculates the balanced cross-entropy loss for a balanced
-    NRE (BNRE) classifier.
+    NRE (BNRE) network.
 
-    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
+    Given a batch of :math:`N \geq 2` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math::
         l & = \frac{1}{2N} \sum_{i = 1}^N
@@ -165,7 +165,7 @@ class BNRELoss(nn.Module):
         | https://arxiv.org/abs/2208.13624
 
     Arguments:
-        estimator: A classifier network :math:`d_\phi(\theta, x)`.
+        estimator: A log-ratio network :math:`\log r_\phi(\theta, x)`.
         lmbda: The weight :math:`\lambda` controlling the strength of the balancing
             condition.
     """
@@ -200,9 +200,164 @@ class BNRELoss(nn.Module):
         return (l1 + l0) / 2 + self.lmbda * lb
 
 
+class CNRELoss(nn.Module):
+    r"""Creates a module that calculates the cross-entropy loss for a contrastive NRE
+    (CNRE) network.
+
+    The principle of contrastive neural ratio estimation (CNRE) is to predict whether a
+    set :math:`\Theta = \{\theta^1, \dots, \theta^K\}` contains or not the parameters
+    that originated an observation :math:`x`. The elements of :math:`\Theta` are drawn
+    independently from the prior :math:`p(\theta)` and the element :math:`\theta^k` that
+    originates the observation :math:`x \sim p(x | \theta^k)` is chosen uniformly within
+    :math:`\Theta`, such that
+
+    .. math:: p(\Theta, x)
+        & = p(\Theta) \, p(x | \Theta) \\
+        & = p(\Theta) \frac{1}{K} \sum_{k = 1}^K p(x | \theta^k) \\
+        & = p(\Theta) \, p(x) \frac{1}{K} \sum_{k = 1}^K r(\theta^k, x)
+
+    where :math:`r(\theta, x)` is the likelihood-to-evidence (LTE) ratio. The task
+    is to discriminate between pairs :math:`(\Theta, x)` for which :math:`\Theta` either
+    does or does not contain the nominal parameters of :math:`x`, similar to the
+    original NRE optimization problem. For this task, the decision function
+    modeling the Bayes optimal classifier is
+
+    .. math:: d(\Theta, x)
+        = \frac{p(\Theta, x)}{p(\Theta, x) + \frac{1}{\gamma} p(\Theta) p(x)}
+        = \frac{\sum_{k = 1}^K r(\theta^k, x)}{\frac{K}{\gamma} + \sum_{k = 1}^K r(\theta^k, x)} \, ,
+
+    where :math:`\gamma \in \mathbb{R}^+` are the odds of :math:`\Theta` containing to
+    not containing the nominal parameters. Consequently, a classifier
+    :math:`d_\phi(\Theta, x)` can be equivalently replaced and trained as a composition
+    of ratios :math:`r_\phi(\theta^k, x)`. Eventually, given a batch of :math:`N \geq
+    2K` pairs :math:`(\theta_i, x_i)`, the module returns
+
+    .. math:: l = \frac{1}{N} \sum_{i = 1}^N
+        \frac{\gamma}{\gamma + 1} \ell(d_\phi(\Theta_i, x_i))
+        + \frac{1}{\gamma + 1} \ell(1 - d_\phi(\Theta_{i+K}, x_i))
+
+    where :math:`\ell(p) = -\log p` is the negative log-likelihood and :math:`\Theta_i =
+    \{\theta_i, \dots, \theta_{i+K-1}\}`.
+
+    References:
+        | Contrastive Neural Ratio Estimation (Miller et al., 2022)
+        | https://arxiv.org/abs/2210.06170
+
+    Arguments:
+        estimator: A log-ratio network :math:`\log r_\phi(\theta, x)`.
+        cardinality: The cardinality :math:`K` of :math:`\Theta`.
+        gamma: The odds ratio :math:`\gamma`.
+    """
+
+    def __init__(
+        self,
+        estimator: nn.Module,
+        cardinality: int = 2,
+        gamma: float = 1.0,
+    ):
+        super().__init__()
+
+        self.estimator = estimator
+        self.cardinality = cardinality
+        self.gamma = gamma
+
+    def logits(self, theta: Tensor, x: Tensor) -> Tensor:
+        theta = torch.cat((theta, theta[:self.cardinality - 1]), dim=0)
+        theta = theta.unfold(0, self.cardinality, 1)
+        theta = theta.movedim(-1, 0)
+
+        theta_prime = torch.roll(theta, self.cardinality, dims=1)
+
+        log_r, log_r_prime = self.estimator(
+            torch.stack((theta, theta_prime)),
+            x,
+        )
+
+        shift = math.log(self.gamma / self.cardinality)
+
+        log_r = torch.logsumexp(log_r, dim=0) + shift
+        log_r_prime = torch.logsumexp(log_r_prime, dim=0) + shift
+
+        return log_r, log_r_prime
+
+    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
+        r"""
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
+            x: The observation :math:`x`, with shape :math:`(N, L)`.
+
+        Returns:
+            The scalar loss :math:`l`.
+        """
+
+        log_r, log_r_prime = self.logits(theta, x)
+
+        l1 = -F.logsigmoid(log_r).mean()
+        l0 = -F.logsigmoid(-log_r_prime).mean()
+
+        return (self.gamma * l1 + l0) / (self.gamma + 1)
+
+
+class BCNRELoss(CNRELoss):
+    r"""Creates a module that calculates the balanced cross-entropy loss for a balanced
+    CNRE (BCNRE) network.
+
+    Given a batch of :math:`N \geq 2K` pairs :math:`(\theta_i, x_i)`, the module returns
+
+    .. math::
+        l & = \frac{1}{N} \sum_{i = 1}^N
+            \frac{\gamma}{\gamma + 1} \ell(d_\phi(\Theta_i, x_i))
+            + \frac{1}{\gamma + 1} \ell(1 - d_\phi(\Theta_{i+K}, x_i)) \\
+          & + \lambda \left(1 - \frac{1}{N} \sum_{i = 1}^N
+            d_\phi(\Theta_i, x_i) + d_\phi(\Theta_{i+K}, x_i) \right)^2
+
+    where :math:`\ell(p) = -\log p` is the negative log-likelihood and :math:`\Theta_i =
+    \{\theta_i, \dots, \theta_{i+K-1}\}`.
+
+    References:
+        | Balancing Simulation-based Inference for Conservative Posteriors (Delaunoy et al., 2023)
+        | https://arxiv.org/abs/2304.10978
+
+    Arguments:
+        estimator: A log-ratio network :math:`\log r_\phi(\theta, x)`.
+        cardinality: The cardinality :math:`K` of :math:`\Theta`.
+        gamma: The odds ratio :math:`\gamma`.
+        lmbda: The weight :math:`\lambda` controlling the strength of the balancing
+            condition.
+    """
+
+    def __init__(
+        self,
+        estimator: nn.Module,
+        cardinality: int = 2,
+        gamma: float = 1.0,
+        lmbda: float = 100.0,
+    ):
+        super().__init__(estimator, cardinality, gamma)
+
+        self.lmbda = lmbda
+
+    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
+        r"""
+        Arguments:
+            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
+            x: The observation :math:`x`, with shape :math:`(N, L)`.
+
+        Returns:
+            The scalar loss :math:`l`.
+        """
+
+        log_r, log_r_prime = self.logits(theta, x)
+
+        l1 = -F.logsigmoid(log_r).mean()
+        l0 = -F.logsigmoid(-log_r_prime).mean()
+        lb = (torch.sigmoid(log_r) + torch.sigmoid(log_r_prime) - 1).mean().square()
+
+        return (self.gamma * l1 + l0) / (self.gamma + 1) + self.lmbda * lb
+
+
 class AMNRE(NRE):
-    r"""Creates an arbitrary marginal neural ratio estimation (AMNRE) classifier
-    network.
+    r"""Creates an arbitrary marginal neural ratio estimation (AMNRE) network.
 
     The principle of AMNRE is to introduce, as input to the classifier, a binary mask
     :math:`b \in \{0, 1\}^D` indicating a subset of parameters :math:`\theta_b =
@@ -268,9 +423,9 @@ class AMNRE(NRE):
 
 
 class AMNRELoss(nn.Module):
-    r"""Creates a module that calculates the cross-entropy loss for an AMNRE classifier.
+    r"""Creates a module that calculates the cross-entropy loss for an AMNRE network.
 
-    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
+    Given a batch of :math:`N \geq 2` pairs :math:`(\theta_i, x_i)`, the module returns
 
     .. math:: l = \frac{1}{2N} \sum_{i = 1}^N
         \ell(d_\phi(\theta_i \odot b_i, x_i, b_i)) +
@@ -279,7 +434,7 @@ class AMNRELoss(nn.Module):
     where the binary masks :math:`b_i` are sampled from a distribution :math:`P(b)`.
 
     Arguments:
-        estimator: A classifier network :math:`d_\phi(\theta, x, b)`.
+        estimator: A log-ratio network :math:`\log r_\phi(\theta, x, b)`.
         mask_dist: A binary mask distribution :math:`P(b)`.
     """
 
@@ -522,217 +677,6 @@ class AMNPELoss(nn.Module):
         log_prob = self.estimator(theta, x, b)
 
         return -log_prob.mean()
-
-
-class CNRELoss(nn.Module):
-    r"""Creates a module that calculates the loss :math:`l_{\gamma, K}` of a 
-    NRE classifier :math:`q_{w}(y \mid \theta, x)` from Contrastive Neural 
-    Ratio Estimation [1]. 
-    
-    This is a cross-entropy loss (via ''multi-class sigmoid'' activation) for
-    1-out-of-`K + 1` classification. It requires samples:
-    :math:`\Theta^{(i)} \coloneqq (\theta_{1}^{(i)}, \ldots, \theta_{K}^{(i)}) \sim p(\theta)`,
-    :math:`x^{(i)} \sim p(x \mid \theta_k)`,
-    :math:`\Theta^{(i')} \coloneqq (\theta_{1}^{(i')}, \ldots, \theta_{K}^{(i')}) \sim p(\theta)`,
-    and :math:`x^{(i')} \sim p(x)`
-    with :math:`i = 1, 2, \ldots, N` and :math:`i' = 1, 2, \ldots, N`.
-    
-    In practice, the independent samples are drawn from applying `torch.roll` 
-    :math:`2K - 1` times to a batch of :math:`N` pairs 
-    :math:`(\theta^{(n)}, x^{(n)}) \sim p(\theta, x)`.
-    
-    Let :math:`\Theta \coloneqq (\theta_1, ..., \theta_K)`, we define the 
-    classifier:
-
-    .. math::
-        q_{w}(y = k \mid \Theta, \bx) \coloneqq
-        \begin{cases}
-            \frac{K}{K + \gamma \sum_{j=1}^{K} \exp \circ h_{w}(\theta_j, \bx)} & k = 0 \\
-            \frac{\gamma \, \exp \circ h_{w}(\theta_k,\bx))}{K + \gamma \sum_{j=1}^{K} \exp \circ h_{w}(\theta_j,\bx)} & k = 1, \ldots, K.
-        \end{cases}
-    
-    where :math:`h_{w}` is a neural network with weights :math:`w` and 
-    :math:`\gamma \coloneqq \frac{K p(y=k)}{p(y=1)}` defines the target
-    distribution over :math:`y`.
-    
-    The module returns
-
-    .. math::
-        \hat{\ell}_{\gamma, K}(w) & \coloneqq 
-            -\frac{1}{N} \Bigg[
-                \frac{1}{1 + \gamma} \frac{1}{N} \sum_{i = 1}^{N} q_{w}(y = 0 \mid \Theta^{(i)}, \bx^{(i)})
-                \frac{\gamma}{1 + \gamma} \frac{1}{N} \sum_{i' = 1}^{N} q_{w}(y = K \mid \Theta^{(i')}, \bx^{(i')})
-            \Bigg].
-
-    References:
-        [1] Benajmin Kurt Miller, et. al., _Contrastive Neural Ratio Estimation_,
-            NeurIPS 2022, https://arxiv.org/abs/2210.06170
-    
-    Arguments:
-        estimator: The log ratio estimator :math:`h_w(\theta, x)`.
-        num_classes: The number of classes :math:`K`.
-        gamma: The ratio of the distribution over possible classes, specifically
-            :math:`\gamma \coloneqq \frac{K p(y=k)}{p(y=0)}`.
-    """
-
-    def __init__(self, estimator: nn.Module, num_classes: int, gamma: float):
-        super().__init__()
-        self.estimator = estimator
-        assert num_classes >= 1, f"num_classes = {num_classes} must be greater than 1."
-        self.num_classes = num_classes
-        assert gamma > 0, f"gamma = {gamma} must be greater than 0."
-        self.gamma = gamma
-    
-    def _get_log_rs(
-        self,
-        theta: Tensor, 
-        x: Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Arguments:
-            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
-            x: The observation :math:`x`, with shape :math:`(N, L)`.
-
-        Returns:
-            (log_r_y_K, log_r_y_0): log_r_y_K the log ratios computed for y=K 
-                with shape :math:`(K, N)`, log_r_y_0 the log ratios computed 
-                for y=0 with shape :math:`(K, N)`.
-        """
-        assert theta.shape[0] == x.shape[0], "Batch sizes for theta and x must match."
-        batch_size = theta.shape[0]
-
-        inds = torch.arange(batch_size)
-        two_k_rolled_copies = torch.arange(2 * self.num_classes)
-        rolled_inds = (inds + two_k_rolled_copies[:, None]) % batch_size
-        log_r = self.estimator(theta[rolled_inds], x)
-        
-        # index [0, ...] of log_r_y_K is the theta-x-pair sampled from the joint p(theta,x)
-        # all other indicies are drawn marginally
-        # log_r_y_0 only contains marginal draws
-        log_r_y_K, log_r_y_0 = log_r.split((self.num_classes, self.num_classes))
-        return log_r_y_K, log_r_y_0
-
-    def _get_log_probs(
-        self,
-        log_r_y_K: torch.Tensor, 
-        log_r_y_0: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Arguments:
-            log_r_y_K: the log ratios computed for y=K with shape :math:`(K, N)`.
-            log_r_y_0: the log ratios computed for y=0 with shape :math:`(K, N)`.
-
-        Returns:
-            (log_prob_y_K, log_prob_y_0): log_prob_y_K is the classification log prob for y=K,
-                log_prob_y_0 is the classification log prob for y=0
-        """
-        batch_size = log_r_y_K.shape[-1]
-
-        dtype = log_r_y_K.dtype
-        device = log_r_y_K.device
-
-        # To use logsumexp, we extend the denominator logits with loggamma
-        loggamma = torch.tensor(self.gamma, dtype=dtype, device=device).log()
-        logK = torch.tensor(self.num_classes, dtype=dtype, device=device).log()
-        denominator_y_K = torch.cat(
-            [loggamma + log_r_y_K, logK.expand((1, batch_size))],
-            dim=0,
-        )
-        denominator_y_0 = torch.cat(
-            [loggamma + log_r_y_0, logK.expand((1, batch_size))],
-            dim=0,
-        )
-
-        # Compute the contributions to the loss from each term in the classification.
-        log_prob_y_K = (
-            loggamma + log_r_y_K[0, :] - torch.logsumexp(denominator_y_K, dim=0)
-        )
-        log_prob_y_0 = logK - torch.logsumexp(denominator_y_0, dim=0)
-
-        return log_prob_y_K, log_prob_y_0
-
-    def forward(
-        self, theta: Tensor, x: Tensor
-    ) -> torch.Tensor:
-        r"""
-        Arguments:
-            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
-            x: The observation :math:`x`, with shape :math:`(N, L)`.
-
-        Returns:
-            The scalar loss :math:`\hat{\ell}_{\gamma, K}(w)`.
-        """
-        log_r_y_K, log_r_y_0 = self._get_log_rs(theta, x)
-        log_prob_y_K, log_prob_y_0 = self._get_log_probs(log_r_y_K, log_r_y_0)
-
-        return -torch.mean(
-            (1 / (1 + self.gamma)) * log_prob_y_0 + \
-            (self.gamma / (1 + self.gamma)) * log_prob_y_K
-        )
-
-
-class BinaryBalancedCNRELoss(CNRELoss):
-    r"""Creates a module that calculates the loss :math:`l_{\gamma, K, \lambda}` 
-    of a NRE classifier :math:`q_{w}(y \mid \theta, x)` from Contrastive Neural 
-    Ratio Estimation [1], but regularized by the balance criterion from 
-    Balancing Simulation-based Inference for Conservative Posteriors [1]. 
-    Further details in Appendix B of [1].
-
-    Given a batch of :math:`N` pairs :math:`(\theta^{(n)}, x^{(n)})`, the module 
-    returns
-    :math:`\hat{\ell}_{\gamma, K}(w) + \lambda \hat{\ell}_{B}(w)`. 
-    The balance criterion is defined
-
-    .. math::
-        \hat{\ell}_{B}(w) \coloneqq
-            \left(1 - \frac{1}{N} \sum_{i = n}^{N}
-            \sigma \circ h_{w}(\theta^{(n)}, x^{(n)}) + 
-            \sigma \circ h_{w}(\theta^{(n')}, x^{(n')}) \right)^2
-
-    where :math:`\sigma` is the logistic sigmoid, :math:`h_{w}` is the neural 
-    network, :math:`\theta^{(n)}, x^{(n)} \sim p(\theta, x)` and 
-    :math:`\theta^{(n')}, x^{(n')} \sim p(\theta)p(x)`. In practice, the 
-    independent samples are drawn from applying `torch.roll` to the batch.
-    
-    References:
-        [1] Arnaud Delaunoy, Benjamin Kurt Miller, et. al., 
-            _Balancing Simulation-based Inference for Conservative Posteriors_,
-            https://arxiv.org/abs/2304.10978
-
-    Arguments:
-        estimator: The log ratio estimator :math:`h_w(\theta, x)`.
-        num_classes: The number of classes :math:`K`.
-        gamma: The ratio of the distribution over possible classes, specifically
-            :math:`\gamma \coloneqq \frac{K p(y=k)}{p(y=0)}`.
-        lmbda: lagrange multiplier for balance condition
-    """
-
-    def __init__(self, estimator: nn.Module, num_classes: int, gamma: float, lmbda: float):
-        super().__init__(estimator, num_classes, gamma)
-        self.lmbda = lmbda
-
-    def forward(
-        self, theta: Tensor, x: Tensor
-    ) -> torch.Tensor:
-        r"""
-        Arguments:
-            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
-            x: The observation :math:`x`, with shape :math:`(N, L)`.
-
-        Returns:
-            The scalar loss :math:`\hat{\ell}_{\gamma, K}(w) + \lambda \hat(\ell)_{B}(w)`.
-        """
-        log_r_y_K, log_r_y_0 = self._get_log_rs(theta, x)
-        log_prob_y_K, log_prob_y_0 = self._get_log_probs(log_r_y_K, log_r_y_0)
-
-        return -torch.mean(
-            (1 / (1 + self.gamma)) * log_prob_y_0 + \
-            (self.gamma / (1 + self.gamma)) * log_prob_y_K
-        ) + self.lmbda * \
-        (
-            torch.sigmoid(log_r_y_K[0, :]) + \
-            torch.sigmoid(log_r_y_0[0, :]) - 1
-        ).mean().square()
 
 
 class NSE(nn.Module):
