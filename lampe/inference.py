@@ -239,6 +239,11 @@ class CNRELoss(nn.Module):
     where :math:`\ell(p) = -\log p` is the negative log-likelihood and :math:`\Theta_i =
     \{\theta_i, \dots, \theta_{i+K-1}\}`.
 
+    Note:
+        The quantity :math:`d_\phi(\Theta, x)` corresponds to :math:`q_\phi(y \neq 0 |
+        \Theta, x)` or :math:`1 - q_\phi(y = 0 | \Theta, x)` in the notations of Miller
+        et al. (2022).
+
     References:
         | Contrastive Neural Ratio Estimation (Miller et al., 2022)
         | https://arxiv.org/abs/2210.06170
