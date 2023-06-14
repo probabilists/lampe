@@ -8,6 +8,6 @@ Tutorials
     tutorials/simulators
     tutorials/npe
     tutorials/nre
-    tutorials/nse
+    tutorials/fmpe
     tutorials/coverage
     tutorials/embedding

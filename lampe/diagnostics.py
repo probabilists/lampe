@@ -14,12 +14,13 @@ def expected_coverage_mc(
     posterior: Callable[[Tensor], Distribution],
     pairs: Iterable[Tuple[Tensor, Tensor]],
     n: int = 1024,
+    device: str = None,
 ) -> Tuple[Tensor, Tensor]:
     r"""Estimates by Monte Carlo (MC) the expected coverages of a posterior estimator
     :math:`q(\theta | x)` over pairs :math:`(\theta^*, x^*) \sim p(\theta, x)`.
 
-    The expected coverage at credible level :math:`1 - \alpha` is the probability
-    of :math:`\theta^*` to be included in the highest density region of total probability
+    The expected coverage at credible level :math:`1 - \alpha` is the probability of
+    :math:`\theta^*` to be included in the highest density region of total probability
     :math:`1 - \alpha` of the posterior :math:`q(\theta | x^*)`, denoted
     :math:`\Theta_{q(\theta | x^*)}(1 - \alpha)`. To get the coverages, the proportion
     :math:`r^*` of samples :math:`\theta \sim q(\theta | x^*)` having a higher estimated
@@ -45,6 +46,7 @@ def expected_coverage_mc(
         posterior: A posterior estimator :math:`q(\theta | x)`.
         pairs: An iterable of pairs :math:`(\theta^*, x^*) \sim p(\theta, x)`.
         n: The number of samples to draw from the posterior for each pair.
+        device: The device on which the computations are performed.
 
     Returns:
         A vector of increasing credible levels and their respective expected coverages.
@@ -59,8 +61,10 @@ def expected_coverage_mc(
 
     with torch.no_grad():
         for theta, x in tqdm(pairs, unit='pair'):
-            dist = posterior(x)
+            if device is not None:
+                theta, x = theta.to(device), x.to(device)
 
+            dist = posterior(x)
             samples = dist.sample((n,))
             mask = dist.log_prob(theta) < dist.log_prob(samples)
             rank = mask.sum() / mask.numel()
@@ -68,18 +72,19 @@ def expected_coverage_mc(
             ranks.append(rank)
 
     ranks = torch.stack(ranks).cpu()
-    ranks = torch.cat((ranks, torch.tensor([0.0, 1.0])))
+    ranks = torch.cat((ranks, ranks.new_tensor((0.0, 1.0))))
 
     return (
         torch.sort(ranks).values,
-        torch.linspace(0.0, 1.0, len(ranks)),
+        torch.linspace(0, 1, len(ranks)),
     )
 
 
 def expected_coverage_ni(
-    posterior: Callable[[Tensor, Tensor], Tensor],
+    log_p: Callable[[Tensor, Tensor], Tensor],
     pairs: Iterable[Tuple[Tensor, Tensor]],
     domain: Tuple[Tensor, Tensor],
+    device: str = None,
     **kwargs,
 ) -> Tuple[Tensor, Tensor]:
     r"""Estimates by numerical integration (NI) the expected coverages of a posterior
@@ -90,9 +95,10 @@ def expected_coverage_ni(
     posterior estimator can be evaluated but not be sampled from.
 
     Arguments:
-        posterior: A posterior estimator :math:`\log q(\theta | x)`.
+        log_p: A log-posterior estimator :math:`\log q(\theta | x)`.
         pairs: An iterable of pairs :math:`(\theta^*, x^*) \sim p(\theta, x)`.
         domain: A pair of lower and upper domain bounds for :math:`\theta`.
+        device: The device on which the computations are performed.
         kwargs: Keyword arguments passed to :func:`lampe.utils.gridapply`.
 
     Returns:
@@ -102,25 +108,31 @@ def expected_coverage_ni(
         >>> domain = (torch.zeros(3), torch.ones(3))
         >>> prior = lampe.distributions.BoxUniform(*domain)
         >>> ratio = lampe.inference.NRE(3, 4)
-        >>> posterior = lambda theta, x: ratio(theta, x) + prior.log_prob(theta)
+        >>> log_p = lambda theta, x: ratio(theta, x) + prior.log_prob(theta)
         >>> testset = lampe.data.H5Dataset('test.h5')
-        >>> levels, coverages = expected_coverage_ni(posterior, testset, domain)
+        >>> levels, coverages = expected_coverage_ni(log_p, testset, domain)
     """
+
+    if device is not None:
+        domain = tuple(bound.to(device) for bound in domain)
 
     ranks = []
 
     with torch.no_grad():
         for theta, x in tqdm(pairs, unit='pair'):
-            _, log_probs = gridapply(lambda theta: posterior(theta, x), domain, **kwargs)
-            mask = posterior(theta, x) < log_probs
-            rank = log_probs[mask].logsumexp(dim=0) - log_probs.flatten().logsumexp(dim=0)
+            if device is not None:
+                theta, x = theta.to(device), x.to(device)
+
+            _, log_ps = gridapply(lambda theta: log_p(theta, x), domain, **kwargs)
+            mask = log_p(theta, x) < log_ps
+            rank = log_ps[mask].logsumexp(dim=0) - log_ps.flatten().logsumexp(dim=0)
 
             ranks.append(rank.exp())
 
     ranks = torch.stack(ranks).cpu()
-    ranks = torch.cat((ranks, torch.tensor([0.0, 1.0])))
+    ranks = torch.cat((ranks, ranks.new_tensor((0.0, 1.0))))
 
     return (
         torch.sort(ranks).values,
-        torch.linspace(0.0, 1.0, len(ranks)),
+        torch.linspace(0, 1, len(ranks)),
     )
