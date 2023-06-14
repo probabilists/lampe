@@ -30,29 +30,21 @@ def test_NRE():
 
     assert log_r.shape == (256,)
 
+    # Losses
+    losses = [
+        NRELoss(estimator),
+        BNRELoss(estimator),
+        CNRELoss(estimator),
+        BCNRELoss(estimator),
+    ]
 
-def test_NRELoss():
-    estimator = NRE(3, 5)
-    loss = NRELoss(estimator)
+    for loss in losses:
+        theta, x = randn(256, 3), randn(256, 5)
 
-    theta, x = randn(256, 3), randn(256, 5)
+        l = loss(theta, x)
 
-    l = loss(theta, x)
-
-    assert l.shape == ()
-    assert l.requires_grad
-
-
-def test_BNRELoss():
-    estimator = NRE(3, 5)
-    loss = BNRELoss(estimator)
-
-    theta, x = randn(256, 3), randn(256, 5)
-
-    l = loss(theta, x)
-
-    assert l.shape == ()
-    assert l.requires_grad
+        assert l.shape == (), loss
+        assert l.requires_grad, loss
 
 
 def test_AMNRE():
