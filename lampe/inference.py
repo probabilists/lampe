@@ -10,10 +10,8 @@ __all__ = [
     'AMNRELoss',
     'NPE',
     'NPELoss',
-    'AMNPE',
-    'AMNPELoss',
-    'NSE',
-    'NSELoss',
+    'FMPE',
+    'FMPELoss',
     'MetropolisHastings',
 ]
 
@@ -536,20 +534,6 @@ class NPE(nn.Module):
 
         return self.flow(x).log_prob(theta)
 
-    def sample(self, x: Tensor, shape: Size = ()) -> Tensor:
-        r"""
-        Arguments:
-            x: The observation :math:`x`, with shape :math:`(*, L)`.
-            shape: The shape :math:`S` of the samples.
-
-        Returns:
-            The samples :math:`\theta \sim p_\phi(\theta | x)`,
-            with shape :math:`S + (*, D)`.
-        """
-
-        with torch.no_grad():
-            return self.flow(x).sample(shape)
-
 
 class NPELoss(nn.Module):
     r"""Creates a module that calculates the negative log-likelihood loss for a NPE
@@ -583,145 +567,24 @@ class NPELoss(nn.Module):
         return -log_p.mean()
 
 
-class AMNPE(NPE):
-    r"""Creates an arbitrary marginal neural posterior estimation (AMNPE)
-    normalizing flow.
+class FMPE(nn.Module):
+    r"""Creates a flow matching posterior estimation (FMPE) network.
 
-    TODO
+    The principle of FMPE is to train a regression network :math:`v_\phi(\theta, x, t)`
+    to approximate a vector field inducing a time-continuous normalizing flow between
+    the posterior distribution :math:`p(\theta | x)` and a standard Gaussian
+    distribution :math:`\mathcal{N}(0, I)`.
 
-    Arguments:
-        theta_dim: The dimensionality :math:`D` of the parameter space.
-        x_dim: The dimensionality :math:`L` of the observation space.
-        args: Positional arguments passed to :class:`NPE`.
-        kwargs: Keyword arguments passed to :class:`NPE`.
-    """
-
-    def __init__(
-        self,
-        theta_dim: int,
-        x_dim: int,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(theta_dim, x_dim + theta_dim, *args, **kwargs)
-
-    def forward(self, theta: Tensor, x: Tensor, b: BoolTensor) -> Tensor:
-        r"""
-        Arguments:
-            theta: The parameters :math:`\theta`, with shape :math:`(*, D)`.
-            x: The observation :math:`x`, with shape :math:`(*, L)`.
-            b: A binary mask :math:`b`, with shape :math:`(*, D)`.
-
-        Returns:
-            The log-density :math:`\log p_\phi(\theta | x, b)`, with shape :math:`(*,)`.
-        """
-
-        theta, x, b = broadcast(theta, x, b * 2.0 - 1.0, ignore=1)
-
-        return self.flow(torch.cat((x, b), dim=-1)).log_prob(theta)
-
-    def sample(self, x: Tensor, b: BoolTensor, shape: Size = ()) -> Tensor:
-        r"""
-        Arguments:
-            x: The observation :math:`x`, with shape :math:`(*, L)`.
-            b: A binary mask :math:`b`, with shape :math:`(D,)`.
-            shape: The shape :math:`S` of the samples.
-
-        Returns:
-            The samples :math:`\theta_b \sim p_\phi(\theta_b | x, b)`,
-            with shape :math:`S + (*, D)`.
-        """
-
-        x, b_ = broadcast(x, b * 2.0 - 1.0, ignore=1)
-
-        with torch.no_grad():
-            return self.flow(torch.cat((x, b_), dim=-1)).sample(shape)[..., b]
-
-
-class AMNPELoss(nn.Module):
-    r"""Creates a module that calculates the negative log-likelihood loss for an AMNPE
-    normalizing flow.
-
-    Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
-
-    .. math:: l = \frac{1}{N} \sum_{i = 1}^N
-        -\log p_\phi(\theta_i \odot b_i + \theta_{i + 1} \odot (1 - b_i) | x_i, b_i)
-
-    where the binary masks :math:`b_i` are sampled from a distribution :math:`P(b)`.
-
-    Arguments:
-        estimator: A normalizing flow :math:`p_\phi(\theta | x, b)`.
-        mask_dist: A binary mask distribution :math:`P(b)`.
-    """
-
-    def __init__(
-        self,
-        estimator: nn.Module,
-        mask_dist: Distribution,
-    ):
-        super().__init__()
-
-        self.estimator = estimator
-        self.mask_dist = mask_dist
-
-    def forward(self, theta: Tensor, x: Tensor) -> Tensor:
-        r"""
-        Arguments:
-            theta: The parameters :math:`\theta`, with shape :math:`(N, D)`.
-            x: The observation :math:`x`, with shape :math:`(N, L)`.
-
-        Returns:
-            The scalar loss :math:`l`.
-        """
-
-        theta_prime = torch.roll(theta, 1, dims=0)
-
-        b = self.mask_dist.sample(theta.shape[:-1])
-        theta = torch.where(b, theta, theta_prime)
-
-        log_prob = self.estimator(theta, x, b)
-
-        return -log_prob.mean()
-
-
-class NSE(nn.Module):
-    r"""Creates a neural score estimation (NSE) regression network.
-
-    The principle of neural score estimation is to train a regression network
-    :math:`s_\phi(\theta_t, x, t)` to approximate the score :math:`\nabla_{\! \theta_t}
-    \log p(\theta_t | x)` of the sub-variance preserving (sub-VP) diffusion process
-
-    .. math:: \mathrm{d} \theta_t = -\frac{1}{2} \beta(t) \theta_t \, \mathrm{d} t +
-        \sqrt{\beta(t) (1 - \alpha(t)^2)} \, \mathrm{d} w
-
-    where :math:`\alpha(t) = \exp(-\int_0^t \beta(u) \, \mathrm{d} u)` and
-    :math:`\beta(t) = (\beta_\max - \beta_\min) \, t + \beta_\min` . The optimization
-    problem is to minimize the rescaled score-matching objective, that is,
-
-    .. math:: \arg\min_\phi \mathbb{E}_{p(\theta, x) p(t) p(\theta_t | \theta)}
-        \Big[ \big\| s_\phi(\theta_t, x, t) - (1 - \alpha(t)) \nabla_{\! \theta_t}
-        \log p(\theta_t | \theta) \big\|_2^2 \Big]
-
-    where :math:`p(\theta_t | \theta) = \mathcal{N}(\theta_t; \sqrt{\alpha(t)} \,
-    \theta, (1 - \alpha(t))^2 I)` is the perturbation kernel corresponding to the
-    diffusion process and for which the optimal regressor is the rescaled score
-
-    .. math:: s(\theta_t, x, t) =
-        (1 - \alpha(t)) \nabla_{\! \theta_t} \log p(\theta_t | x) .
-
-    Given the latter, or an estimator of the latter, the probability flow ODE
-
-    .. math:: \mathrm{d} \theta_t =
-        \left[ -\frac{1}{2} \beta(t) \theta_t - \frac{1}{2} \beta(t) (1 + \alpha(t))
-        s(\theta_t, x, t) \right] \, \mathrm{d} t
-
-    shares the same marginal densities :math:`p(\theta_t | x)` as the diffusion process
-    and can be efficiently integrated (forward for log-density computation and backward
-    for sampling) with black-box ODE solvers.
+    After training, the normalizing flow :math:`p_\phi(\theta | x)` induced by
+    :math:`v_\phi(\theta, x, t)` is used to evaluate the posterior density or generate
+    samples.
 
     References:
-        | Score-Based Generative Modeling through Stochastic Differential Equations (Song et al., 2021)
-        | https://arxiv.org/abs/2011.13456
+        | Flow Matching for Generative Modeling (Lipman et al., 2023)
+        | https://arxiv.org/abs/2210.02747
+
+        | Flow Matching for Scalable Simulation-Based Inference (Dax et al., 2023)
+        | https://arxiv.org/abs/2305.17161
 
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
@@ -756,7 +619,7 @@ class NSE(nn.Module):
             t: The time :math:`t`, with shape :math:`(*,).`
 
         Returns:
-            The rescaled score :math:`s_\phi(\theta, x, t)`, with shape :math:`(*, D)`.
+            The vector field :math:`v_\phi(\theta, x, t)`, with shape :math:`(*, D)`.
         """
 
         t = self.freqs * t[..., None]
@@ -766,59 +629,47 @@ class NSE(nn.Module):
 
         return self.net(torch.cat((theta, x, t), dim=-1))
 
-    def alpha(self, t: Tensor) -> Tensor:
-        return torch.exp(-8.0 * t**2)
-
-    def beta(self, t: Tensor) -> Tensor:
-        return 16.0 * t
-
-    def ode(self, theta: Tensor, x: Tensor, t: Tensor) -> Tensor:
-        alpha, beta = self.alpha(t), self.beta(t)
-        score = self.forward(theta, x, t)
-
-        return -beta / 2 * (theta + (1 + alpha) * score)
-
     def flow(self, x: Tensor) -> Distribution:
         r"""
         Arguments:
             x: The observation :math:`x`, with shape :math:`(*, L)`.
 
         Returns:
-            The posterior distribution :math:`p_\phi(\theta | x)` induced by the
-            probability flow ODE.
+            The normalizing flow :math:`p_\phi(\theta | x)`.
         """
 
         return NormalizingFlow(
             transform=FreeFormJacobianTransform(
-                f=lambda t, theta: self.ode(theta, x, t),
-                time=x.new_tensor(1.0),
+                f=lambda t, theta: self(theta, x, t),
+                t0=x.new_tensor(0.0),
+                t1=x.new_tensor(1.0),
                 phi=(x, *self.parameters()),
             ),
             base=DiagNormal(self.zeros, self.ones).expand(x.shape[:-1]),
         )
 
 
-class NSELoss(nn.Module):
-    r"""Creates a module that calculates the rescaled score-matching loss for a NSE
-    regressor.
+class FMPELoss(nn.Module):
+    r"""Creates a module that calculates the flow matching loss for a FMPE regressor.
 
     Given a batch of :math:`N` pairs :math:`(\theta_i, x_i)`, the module returns
 
-    .. math:: l = \frac{1}{N} \sum_{i = 1}^N
-        \| s_\phi(\theta'_i, x_i, t_i) + z_i \|_2^2
+    .. math:: l = \frac{1}{N} \sum_{i = 1}^N\|
+            v_\phi((1 - t_i) \theta_i + (t_i + \eta) \epsilon_i, x_i, t_i)
+            - (\epsilon_i - \theta_i)
+        \|_2^2
 
-    where :math:`t_i \sim \mathcal{U}(0, 1)`, :math:`z_i \sim \mathcal{N}(0,
-    I)` and :math:`\theta'_i = \sqrt{\alpha(t_i)} \, \theta_i + (1 - \alpha(t_i)) \,
-    z_i`.
+    where :math:`t_i \sim \mathcal{U}(0, 1)` and :math:`\epsilon_i \sim \mathcal{N}(0, I)`.
 
     Arguments:
-        estimator: A regression network :math:`s_\phi(\theta, x, t)`.
+        estimator: A regression network :math:`v_\phi(\theta, x, t)`.
     """
 
-    def __init__(self, estimator: nn.Module):
+    def __init__(self, estimator: nn.Module, eta: float = 1e-3):
         super().__init__()
 
         self.estimator = estimator
+        self.eta = eta
 
     def forward(self, theta: Tensor, x: Tensor) -> Tensor:
         r"""
@@ -830,15 +681,14 @@ class NSELoss(nn.Module):
             The scalar loss :math:`l`.
         """
 
-        t = theta.new_empty(theta.shape[:-1]).uniform_(0, 1)
-        alpha = self.estimator.alpha(t)[..., None]
+        t = torch.rand(theta.shape[:-1], dtype=theta.dtype, device=theta.device)
+        t_ = t[..., None]
 
-        z = torch.randn_like(theta)
-        theta_prime = alpha.sqrt() * theta + (1 - alpha) * z
+        eps = torch.randn_like(theta)
+        theta_prime = (1 - t_) * theta + (t_ + self.eta) * eps
+        v = eps - theta
 
-        score = self.estimator(theta_prime, x, t)
-
-        return (score + z).square().mean()
+        return (self.estimator(theta_prime, x, t) - v).square().mean()
 
 
 class MetropolisHastings(object):

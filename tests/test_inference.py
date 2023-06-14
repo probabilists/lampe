@@ -119,7 +119,7 @@ def test_NPE():
 
     # Sample
     x = randn(32, 5)
-    theta = estimator.sample(x, (8,))
+    theta = estimator.flow(x).sample((8,))
 
     assert theta.shape == (8, 32, 3)
 
@@ -136,50 +136,8 @@ def test_NPELoss():
     assert l.requires_grad
 
 
-def test_AMNPE():
-    estimator = AMNPE(3, 5)
-
-    # Non-batched
-    theta, x, b = randn(3), randn(5), randn(3) < 0
-    log_p = estimator(theta, x, b)
-
-    assert log_p.shape == ()
-    assert log_p.requires_grad
-
-    # Batched
-    theta, x, b = randn(256, 3), randn(256, 5), randn(256, 3) < 0
-    log_p = estimator(theta, x, b)
-
-    assert log_p.shape == (256,)
-
-    # Mixed
-    theta, x, b = randn(256, 3), randn(5), randn(2, 1, 3)
-    log_r = estimator(theta, x, b)
-
-    assert log_r.shape == (2, 256)
-
-    # Sample
-    x, b = randn(32, 5), torch.tensor([True, False, True])
-    theta = estimator.sample(x, b, (8,))
-
-    assert theta.shape == (8, 32, 2)
-
-
-def test_AMNPELoss():
-    estimator = AMNPE(3, 5)
-    mask_dist = BernoulliMask(0.5 * torch.ones(3))
-    loss = AMNRELoss(estimator, mask_dist)
-
-    theta, x = randn(256, 3), randn(256, 5)
-
-    l = loss(theta, x)
-
-    assert l.shape == ()
-    assert l.requires_grad
-
-
-def test_NSE():
-    estimator = NSE(3, 5)
+def test_FMPE():
+    estimator = FMPE(3, 5)
 
     # Non-batched
     theta, x, t = randn(3), randn(5), torch.tensor(0.5)
@@ -195,7 +153,7 @@ def test_NSE():
     assert score.shape == (256, 3)
 
     # Mixed
-    theta, x, t = randn(256, 3), randn(5), randn(1)
+    theta, x, t = randn(256, 3), randn(5), randn(())
     score = estimator(theta, x, t)
 
     assert score.shape == (256, 3)
@@ -212,9 +170,9 @@ def test_NSE():
     assert log_p.shape == (8, 32)
 
 
-def test_NSELoss():
-    estimator = NSE(3, 5)
-    loss = NSELoss(estimator)
+def test_FMPELoss():
+    estimator = FMPE(3, 5)
+    loss = FMPELoss(estimator)
 
     theta, x = randn(256, 3), randn(256, 5)
 

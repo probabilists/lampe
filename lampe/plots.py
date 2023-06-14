@@ -460,7 +460,7 @@ def coverage_plot(
 
     ax.plot(levels, coverages, color=color, label=legend)
 
-    ax.grid()
+    ax.grid(visible=True)
     ax.set_xlabel(r'Credible level')
     ax.set_ylabel(r'Expected coverage')
 
