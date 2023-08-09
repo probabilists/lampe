@@ -21,11 +21,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from itertools import islice
-from torch import Tensor, BoolTensor, Size
+from torch import Tensor, BoolTensor
 from typing import *
 
 from zuko.distributions import Distribution, DiagNormal, NormalizingFlow
-from zuko.flows import FlowModule, MAF
+from zuko.flows import Flow, MAF
 from zuko.transforms import FreeFormJacobianTransform
 from zuko.utils import broadcast
 
@@ -265,7 +265,7 @@ class CNRELoss(nn.Module):
         self.gamma = gamma
 
     def logits(self, theta: Tensor, x: Tensor) -> Tensor:
-        theta = torch.cat((theta, theta[:self.cardinality - 1]), dim=0)
+        theta = torch.cat((theta, theta[: self.cardinality - 1]), dim=0)
         theta = theta.unfold(0, self.cardinality, 1)
         theta = theta.movedim(-1, 0)
 
@@ -513,7 +513,7 @@ class NPE(nn.Module):
         self,
         theta_dim: int,
         x_dim: int,
-        build: Callable[[int, int], FlowModule] = MAF,
+        build: Callable[[int, int], Flow] = MAF,
         **kwargs,
     ):
         super().__init__()
@@ -748,8 +748,9 @@ class MetropolisHastings(object):
 
         self.x_0 = x_0
 
-        assert f is not None or log_f is not None, \
-            "Either 'f' or 'log_f' has to be provided."
+        assert (
+            f is not None or log_f is not None
+        ), "Either 'f' or 'log_f' has to be provided."
 
         if f is None:
             self.log_f = log_f
