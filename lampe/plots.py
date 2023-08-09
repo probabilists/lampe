@@ -31,6 +31,8 @@ def nice_rc(latex: bool = False) -> Dict[str, Any]:
         'legend.fontsize': 'x-small',
         'lines.linewidth': 1.0,
         'lines.markersize': 3.0,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.05,
         'savefig.transparent': True,
         'xtick.labelsize': 'x-small',
         'xtick.major.width': 0.8,
@@ -143,9 +145,9 @@ def corner(
     legend: str = None,
     labels: Sequence[str] = None,
     smooth: float = 0,
-    figure: mpl.figure.Figure = None,
+    figure: plt.Figure = None,
     **kwargs,
-) -> mpl.figure.Figure:
+) -> plt.Figure:
     r"""Displays each 1 or 2-d projection of multi-dimensional data, as a triangular
     matrix of histograms, known as corner plot. For 2-d histograms, highest density
     credibility regions are delimited.
@@ -353,13 +355,13 @@ def corner(
             ax.label_outer()
 
     figure.align_labels()
-    figure.tight_layout(pad=0.5)
+    figure.set_layout_engine(layout='tight')
 
     return figure
 
 
 def mark_point(
-    figure: mpl.figure.Figure,
+    figure: plt.Figure,
     point: Array,
     color: Union[str, tuple] = 'black',
     linestyle: str = 'dashed',
@@ -417,9 +419,9 @@ def coverage_plot(
     coverages: Array,
     color: Union[str, tuple] = None,
     legend: str = None,
-    figure: mpl.figure.Figure = None,
+    figure: plt.Figure = None,
     **kwargs,
-) -> mpl.figure.Figure:
+) -> plt.Figure:
     r"""Plots the expected coverage at various credible levels.
 
     Arguments:
@@ -467,6 +469,6 @@ def coverage_plot(
     if legend is not None:
         ax.legend(loc='upper left')
 
-    figure.tight_layout(pad=0.5)
+    figure.set_layout_engine(layout='tight')
 
     return figure
