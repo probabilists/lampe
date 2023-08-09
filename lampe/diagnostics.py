@@ -2,7 +2,7 @@ r"""Diagnostics and reliability assessment."""
 
 import torch
 
-from torch import Tensor, Size
+from torch import Tensor
 from torch.distributions import Distribution
 from tqdm import tqdm
 from typing import *

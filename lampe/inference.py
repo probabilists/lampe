@@ -22,9 +22,10 @@ import torch.nn.functional as F
 
 from itertools import islice
 from torch import Tensor, BoolTensor
+from torch.distributions import Distribution
 from typing import *
 
-from zuko.distributions import Distribution, DiagNormal, NormalizingFlow
+from zuko.distributions import DiagNormal, NormalizingFlow
 from zuko.flows import Flow, MAF
 from zuko.transforms import FreeFormJacobianTransform
 from zuko.utils import broadcast
@@ -504,8 +505,8 @@ class NPE(nn.Module):
     Arguments:
         theta_dim: The dimensionality :math:`D` of the parameter space.
         x_dim: The dimensionality :math:`L` of the observation space.
-        build: The flow constructor (e.g. :class:`zuko.flows.NSF`). It takes the
-            number of sample and context features as positional arguments.
+        build: The flow constructor (e.g. :class:`zuko.flows.spline.NSF`). It takes
+            the number of sample and context features as positional arguments.
         kwargs: Keyword arguments passed to the constructor.
     """
 
