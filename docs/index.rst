@@ -24,7 +24,7 @@ Alternatively, if you need the latest features, you can install it from the repo
 
 .. code-block:: console
 
-    pip install git+https://github.com/francois-rozet/lampe
+    pip install git+https://github.com/probabilists/lampe
 
 Simulation-based inference
 --------------------------
@@ -70,6 +70,6 @@ References
     :hidden:
     :maxdepth: 1
 
-    Contributing <https://github.com/francois-rozet/lampe/blob/master/CONTRIBUTING.md>
-    Changelog <https://github.com/francois-rozet/lampe/releases>
-    License <https://github.com/francois-rozet/lampe/blob/master/LICENSE>
+    Contributing <https://github.com/probabilists/lampe/blob/master/CONTRIBUTING.md>
+    Changelog <https://github.com/probabilists/lampe/releases>
+    License <https://github.com/probabilists/lampe/blob/master/LICENSE>

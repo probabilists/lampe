@@ -12,8 +12,8 @@ import subprocess
 package = 'lampe'
 project = 'LAMPE'
 version = lampe.__version__
-copyright = '2021-2023, François Rozet'
-repository = 'https://github.com/francois-rozet/lampe'
+copyright = '2021-2023'
+repository = 'https://github.com/probabilists/lampe'
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
 
 ## Extensions

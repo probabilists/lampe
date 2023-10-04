@@ -1,4 +1,4 @@
-![LAMPE's banner](https://raw.githubusercontent.com/francois-rozet/lampe/master/docs/images/banner.svg)
+![LAMPE's banner](https://raw.githubusercontent.com/probabilists/lampe/master/docs/images/banner.svg)
 
 # LAMPE
 
@@ -17,7 +17,7 @@ pip install lampe
 Alternatively, if you need the latest features, you can install it from the repository.
 
 ```
-pip install git+https://github.com/francois-rozet/lampe
+pip install git+https://github.com/probabilists/lampe
 ```
 
 ## Documentation
@@ -26,4 +26,4 @@ The documentation is made with [Sphinx](https://www.sphinx-doc.org) and [Furo](h
 
 ## Contributing
 
-If you have a question, an issue or would like to contribute, please read our [contributing guidelines](https://github.com/francois-rozet/lampe/blob/master/CONTRIBUTING.md).
+If you have a question, an issue or would like to contribute, please read our [contributing guidelines](https://github.com/probabilists/lampe/blob/master/CONTRIBUTING.md).
