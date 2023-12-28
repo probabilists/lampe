@@ -1,0 +1,18 @@
+name: lampe
+channels:
+  - nvidia/label/cuda-12.1.1
+  - conda-forge
+dependencies:
+  - python=3.11
+  - cuda
+  - gxx_linux-64=11.4.0
+  - pip
+  - pip:
+    - torch>=2.0.0
+#    - -r requirements.txt
+
+variables:
+  CUDA_PATH: null
+  TORCH_CUDA_ARCH_LIST: "Pascal;Volta;Turing;Ampere"
+  PIP_INDEX_URL: https://download.pytorch.org/whl/cu121
+  PIP_EXTRA_INDEX_URL: https://pypi.org/simple
