@@ -64,7 +64,9 @@ def test_AMNRE():
 
     assert log_r.shape == (256,)
 
-    grad = torch.autograd.functional.jacobian(lambda theta: estimator(theta, x, b).sum(), theta)
+    grad = torch.autograd.functional.jacobian(
+        lambda theta: estimator(theta, x, b).sum(), theta
+    )
 
     assert (grad[~b] == 0).all()
 
@@ -127,14 +129,18 @@ def test_NPE():
 
 def test_NPELoss():
     estimator = NPE(3, 5)
-    loss = NPELoss(estimator)
+    losses = [
+        NPELoss(estimator),
+        CalNPELoss(estimator),
+    ]
 
-    theta, x = randn(256, 3), randn(256, 5)
+    for loss in losses:
+        theta, x = randn(256, 3), randn(256, 5)
 
-    l = loss(theta, x)
+        l = loss(theta, x)
 
-    assert l.shape == ()
-    assert l.requires_grad
+        assert l.shape == ()
+        assert l.requires_grad
 
 
 def test_FMPE():
