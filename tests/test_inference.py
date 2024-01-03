@@ -129,9 +129,12 @@ def test_NPE():
 
 def test_NPELoss():
     estimator = NPE(3, 5)
+    prior = torch.distributions.MultivariateNormal(torch.zeros(3), torch.eye(3))
+
     losses = [
         NPELoss(estimator),
         CalNPELoss(estimator),
+        CalNPELoss(estimator, proposal=prior),
     ]
 
     for loss in losses:
