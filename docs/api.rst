@@ -5,6 +5,7 @@ API
 
 .. autosummary::
    :toctree: api
+   :recursive:
 
    lampe.data
    lampe.diagnostics
