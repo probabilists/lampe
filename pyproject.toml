@@ -18,14 +18,14 @@ classifiers = [
 ]
 dynamic = ["dependencies", "version"]
 keywords = [
-    "torch",
-    "simulation",
-    "inference",
-    "amortized",
-    "bayesian",
-    "posterior",
-    "likelihood",
-    "mcmc",
+  "torch",
+  "simulation",
+  "inference",
+  "amortized",
+  "bayesian",
+  "posterior",
+  "likelihood",
+  "mcmc",
 ]
 readme = "README.md"
 requires-python = ">=3.8"
