@@ -29,7 +29,7 @@ __all__ = [
 import torch.nn as nn
 
 from torch import Tensor
-from typing import *
+from typing import Callable
 from zuko.flows import MAF, Flow
 from zuko.utils import broadcast
 

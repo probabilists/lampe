@@ -12,7 +12,7 @@ from torch import Size, Tensor
 from torch.distributions import Distribution
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from tqdm import tqdm
-from typing import *
+from typing import Callable, Iterable, Iterator, Tuple, Union
 
 
 class IterableJointDataset(IterableDataset):

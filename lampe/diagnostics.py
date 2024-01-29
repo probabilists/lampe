@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 from torch.distributions import Distribution
 from tqdm import tqdm
-from typing import *
+from typing import Callable, Iterable, Tuple
 
 # isort: local
 from .utils import gridapply

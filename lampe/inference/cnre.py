@@ -48,7 +48,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torch import Tensor
-from typing import *
 
 
 class CNRELoss(nn.Module):

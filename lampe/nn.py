@@ -5,7 +5,7 @@ __all__ = ['MLP', 'ResMLP']
 import torch.nn as nn
 
 from torch import Tensor
-from typing import *
+from typing import Sequence
 from zuko.nn import MLP
 
 

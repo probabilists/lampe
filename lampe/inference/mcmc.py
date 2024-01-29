@@ -9,7 +9,7 @@ import torch
 from itertools import islice
 from torch import Tensor
 from torch.distributions import Distribution
-from typing import *
+from typing import Callable, Iterable, Iterator, Union
 from zuko.distributions import DiagNormal
 
 

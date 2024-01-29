@@ -4,7 +4,6 @@ import torch
 
 from torch import BoolTensor, Size, Tensor
 from torch.distributions import Bernoulli, Distribution, Independent
-from typing import *
 
 
 def mask2str(b: BoolTensor) -> str:

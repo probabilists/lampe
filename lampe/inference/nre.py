@@ -44,7 +44,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torch import Tensor
-from typing import *
+from typing import Callable
 from zuko.utils import broadcast
 
 # isort: local

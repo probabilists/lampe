@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from torch import Tensor
 from torch.optim import Optimizer
-from typing import *
+from typing import Callable, Sequence, Tuple, Union
 
 
 class GDStep(object):

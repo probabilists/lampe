@@ -37,7 +37,6 @@ import torch.nn.functional as F
 
 from torch import BoolTensor, Tensor
 from torch.distributions import Distribution
-from typing import *
 from zuko.utils import broadcast
 
 # isort: local

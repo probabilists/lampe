@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numpy import ndarray as Array
-from typing import *
+from typing import Any, Dict, Sequence, Tuple, Union
 
 
 def nice_rc(latex: bool = False) -> Dict[str, Any]:
