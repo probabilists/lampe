@@ -1,6 +1,5 @@
 r"""Tests for the lampe.data module."""
 
-import h5py
 import numpy as np
 import pytest
 import torch

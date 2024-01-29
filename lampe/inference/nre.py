@@ -45,9 +45,9 @@ import torch.nn.functional as F
 
 from torch import Tensor
 from typing import *
-
 from zuko.utils import broadcast
 
+# isort: local
 from ..nn import MLP
 
 

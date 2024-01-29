@@ -1,6 +1,5 @@
 r"""Tests for the lampe.masks module."""
 
-import pytest
 import torch
 
 from lampe.masks import *

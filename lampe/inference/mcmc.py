@@ -5,13 +5,11 @@ __all__ = [
 ]
 
 import torch
-import torch.nn as nn
 
 from itertools import islice
 from torch import Tensor
 from torch.distributions import Distribution
 from typing import *
-
 from zuko.distributions import DiagNormal
 
 
@@ -72,9 +70,7 @@ class MetropolisHastings(object):
 
         self.x_0 = x_0
 
-        assert (
-            f is not None or log_f is not None
-        ), "Either 'f' or 'log_f' has to be provided."
+        assert f is not None or log_f is not None, "Either 'f' or 'log_f' has to be provided."
 
         if f is None:
             self.log_f = log_f

@@ -8,7 +8,7 @@ import torch
 
 from numpy import ndarray as Array
 from pathlib import Path
-from torch import Tensor, Size
+from torch import Size, Tensor
 from torch.distributions import Distribution
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from tqdm import tqdm
@@ -216,8 +216,7 @@ class H5Dataset(IterableDataset):
 
     def __iter__(self) -> Iterator[Tuple[Tensor, Tensor]]:
         chunks = torch.tensor([
-            (i, i + self.chunk_size)
-            for i in range(0, len(self), self.chunk_size)
+            (i, i + self.chunk_size) for i in range(0, len(self), self.chunk_size)
         ])
 
         if self.shuffle:

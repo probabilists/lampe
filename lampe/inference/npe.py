@@ -26,13 +26,11 @@ __all__ = [
     'NPELoss',
 ]
 
-import torch
 import torch.nn as nn
 
 from torch import Tensor
 from typing import *
-
-from zuko.flows import Flow, MAF
+from zuko.flows import MAF, Flow
 from zuko.utils import broadcast
 
 

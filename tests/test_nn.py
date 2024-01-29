@@ -1,8 +1,5 @@
 r"""Tests for the lampe.nn module."""
 
-import pytest
-import torch
-
 from lampe.nn import *
 from torch import randn
 

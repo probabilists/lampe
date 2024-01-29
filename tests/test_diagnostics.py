@@ -1,6 +1,5 @@
 r"""Tests for the lampe.diagnostics module."""
 
-import pytest
 import torch
 
 from lampe.diagnostics import *
@@ -46,17 +45,13 @@ def test_expected_coverage_ni():
     assert torch.allclose(levels, coverages, atol=1e-1)
 
     # Conservative
-    estimator = lambda theta, x: Independent(
-        Truncated(Normal(0, 2 + x**2), -3, 3), 1
-    ).log_prob(theta)
+    estimator = lambda theta, x: Truncated(Normal(0, 2 + x**2), -3, 3).log_prob(theta).sum(-1)
     levels, coverages = expected_coverage_ni(estimator, pairs, domain, bins=128)
 
     assert (coverages > levels).float().mean() > 0.9
 
     # Overconfident
-    estimator = lambda theta, x: Independent(
-        Truncated(Normal(0, 0.5 + x**2), -3, 3), 1
-    ).log_prob(theta)
+    estimator = lambda theta, x: Truncated(Normal(0, 0.5 + x**2), -3, 3).log_prob(theta).sum(-1)
     levels, coverages = expected_coverage_ni(estimator, pairs, domain, bins=128)
 
     assert (coverages < levels).float().mean() > 0.9

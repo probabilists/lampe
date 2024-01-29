@@ -1,13 +1,12 @@
 r"""Tests for the lampe.plots module."""
 
-import pytest
 import numpy as np
 
 from lampe.plots import *
 
 
 def test_nice_rc():
-    assert type(nice_rc()) is dict
+    assert isinstance(nice_rc(), dict)
 
 
 def test_corner():
@@ -38,4 +37,4 @@ def test_corner():
 def test_coverage_plot():
     levels = np.random.rand(512) ** 2
     coverages = np.linspace(0, 1, 512)
-    figure = coverage_plot(levels, coverages)
+    figure = coverage_plot(levels, coverages)  # noqa: F841

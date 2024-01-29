@@ -35,12 +35,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torch import Tensor, BoolTensor
+from torch import BoolTensor, Tensor
 from torch.distributions import Distribution
 from typing import *
-
 from zuko.utils import broadcast
 
+# isort: local
 from .nre import NRE
 
 

@@ -1,6 +1,5 @@
 r"""Tests for the lampe.inference module."""
 
-import pytest
 import torch
 
 from lampe.inference import *

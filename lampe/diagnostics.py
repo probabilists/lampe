@@ -7,6 +7,7 @@ from torch.distributions import Distribution
 from tqdm import tqdm
 from typing import *
 
+# isort: local
 from .utils import gridapply
 
 

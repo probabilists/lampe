@@ -1,6 +1,5 @@
 r"""Tests for the lampe.utils module."""
 
-import math
 import pytest
 import torch
 

@@ -68,7 +68,7 @@ class LinearAlphaColormap(mpl.colors.LinearSegmentedColormap):
         name: str = None,
     ):
         if name is None:
-            if type(color) is str:
+            if isinstance(color, str):
                 name = f'alpha_{color}'
             else:
                 name = f'alpha_{hash(color)}'
@@ -184,7 +184,7 @@ def corner(
         data = np.asarray(data)
         D = data.shape[-1]
 
-        if type(bins) is int:
+        if isinstance(bins, int):
             bins = [bins] * D
 
         if domain is None:
@@ -193,8 +193,7 @@ def corner(
             lower, upper = map(np.asarray, domain)
 
         bins = [
-            np.histogram_bin_edges(data, bins[i], range=(lower[i], upper[i]))
-            for i in range(D)
+            np.histogram_bin_edges(data, bins[i], range=(lower[i], upper[i])) for i in range(D)
         ]
 
         hists = np.ndarray((D, D), dtype=object)

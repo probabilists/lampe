@@ -1,10 +1,9 @@
 r"""Masking helpers."""
 
 import torch
-import torch.nn as nn
 
-from torch import Tensor, BoolTensor, Size
-from torch.distributions import Distribution, Bernoulli, Independent
+from torch import BoolTensor, Size, Tensor
+from torch.distributions import Bernoulli, Distribution, Independent
 from typing import *
 
 

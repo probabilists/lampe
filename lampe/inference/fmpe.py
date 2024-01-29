@@ -29,11 +29,11 @@ import torch.nn as nn
 from torch import Tensor
 from torch.distributions import Distribution
 from typing import *
-
 from zuko.distributions import DiagNormal, NormalizingFlow
 from zuko.transforms import FreeFormJacobianTransform
 from zuko.utils import broadcast
 
+# isort: local
 from ..nn import MLP
 
 
