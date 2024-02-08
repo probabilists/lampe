@@ -59,7 +59,7 @@ class DCPNRELoss(nn.Module):
         estimator: nn.Module,
         prior: torch.distributions.Distribution,
         proposal: torch.distributions.Distribution = None,
-        lmbda: float = 1.0,
+        lmbda: float = 5.0,
         n_samples: int = 16,
         calibration: bool = False,
         sort_kwargs: dict = None,
@@ -75,7 +75,7 @@ class DCPNRELoss(nn.Module):
         self.lmbda = lmbda
         self.n_samples = n_samples
         if calibration:
-            self.activation = lambda input: torch.abs(input)
+            self.activation = torch.nn.Identity()
         else:
             self.activation = torch.nn.ReLU()
         if sort_kwargs is None:
@@ -133,7 +133,7 @@ class DCPNRELoss(nn.Module):
     def regularizer(self, logq, is_samples) -> Tensor:
         ranks = self.get_rank_statistics(logq, is_samples)
         target_cdf, ecdf = self.get_cdfs(ranks)
-        return self.activation(target_cdf - ecdf).mean()
+        return self.activation(target_cdf - ecdf).pow(2).mean()
 
 
 class DCPNPELoss(nn.Module):
@@ -179,7 +179,7 @@ class DCPNPELoss(nn.Module):
         self.lmbda = lmbda
         self.n_samples = n_samples
         if calibration:
-            self.activation = lambda input: torch.abs(input)
+            self.activation = torch.nn.Identity()
         else:
             self.activation = torch.nn.ReLU()
         if sort_kwargs is None:
@@ -287,4 +287,4 @@ class DCPNPELoss(nn.Module):
         """
         ranks = self.get_rank_statistics(x, logq, is_samples)
         target_cdf, ecdf = self.get_cdfs(ranks)
-        return self.activation(target_cdf - ecdf).mean()
+        return self.activation(target_cdf - ecdf).pow(2).mean()
