@@ -7,3 +7,4 @@ from .fmpe import *
 from .mcmc import *
 from .npe import *
 from .nre import *
+from .dcp import *
