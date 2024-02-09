@@ -71,7 +71,7 @@ class DCPNRELoss(nn.Module):
     .. math::
         l & = \frac{1}{2N} \sum_{i = 1}^N
             \ell(d_\phi(\theta_i, x_i)) + \ell(1 - d_\phi(\theta_{i+1}, x_i)) \\
-          & + \lambda 1/M \sum_{j=1}^M | \text{ECP}(1 - \alpha_j) - (1 - \alpha_j)|
+          & + \lambda 1/M \sum_{j=1}^M (\text{ECP}(1 - \alpha_j) - (1 - \alpha_j))^2
 
     where :math:`\ell(p) = -\log p` is the negative log-likelihood and
     :math:`\text{ECP}(1 - \alpha_j)` is the Expected Coverage Probability at
@@ -181,7 +181,7 @@ class DCPNPELoss(nn.Module):
 
     .. math::
         l & = \frac{1}{N} \sum_{i = 1}^N -\log p_\phi(\theta_i | x_i) \\
-          & + \lambda 1/M \sum_{j=1}^M | \text{ECP}(1 - \alpha_j) - (1 - \alpha_j)|
+          & + \lambda 1/M \sum_{j=1}^M (\text{ECP}(1 - \alpha_j) - (1 - \alpha_j))^2
 
     where :math:`\ell(p) = -\log p` is the negative log-likelihood and
     :math:`\text{ECP}(1 - \alpha_j)` is the Expected Coverage Probability at
@@ -204,7 +204,7 @@ class DCPNPELoss(nn.Module):
         self,
         estimator: nn.Module,
         proposal: torch.distributions.Distribution = None,
-        lmbda: float = 1.0,
+        lmbda: float = 5.0,
         n_samples: int = 16,
         calibration: bool = False,
         sort_kwargs: dict = None,
