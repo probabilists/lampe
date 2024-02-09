@@ -1,7 +1,6 @@
 h5py>=3.0.0
 matplotlib>=3.6.0
 numpy>=1.20.0
-torch>=2.0.0
-torchsort>=0.1.9
+torch>=1.12.0
 tqdm>=4.52.0
 zuko>=0.3.0

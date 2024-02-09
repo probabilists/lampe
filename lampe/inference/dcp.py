@@ -1,4 +1,41 @@
-r"""Inference components such as estimators, training losses and MCMC samplers."""
+r"""Differentiable Coverage Probability components.
+
+References:
+    | Calibrating Neural Simulation-Based Inference with Differentiable Coverage Probability (Falkiewicz et al., 2023)
+    | https://arxiv.org/abs/2310.13402
+
+Installation
+------------
+
+This module relies on differentiable sorting package
+[`torchsort`](https://github.com/teddykoker/torchsort) which is not q default
+dependency of `lampe`. `torchsort` supports both CPU and GPU (CUDA) computation.
+In order to install the package with CUDA support, you need to have C++ and CUDA
+compiler installed. For more information please refer to the [installation section](https://github.com/teddykoker/torchsort?tab=readme-ov-file#install)
+in the official repository.
+
+Please keep in mind, that compiler's CUDA version has to match that of pytorch!
+
+For certain Python + CUDA + pytorch versions combinations there are
+[pre-build wheels](https://github.com/teddykoker/torchsort?tab=readme-ov-file#pre-built-wheels)
+available.
+
+
+Below is an example of how to install `torchsort` in a [conda environment](https://conda.io/projects/conda/en/latest/user-guide/getting-started.html)
+with Python 3.11 + CUDA 12.1.1 + pytorch 2.0.0:
+
+.. code-block:: bash
+
+    $ conda create -y --name lampe python=3.11
+    $ conda activate lampe
+    $ unset -v CUDA_PATH
+    $ conda install -y -c "nvidia/label/cuda-12.1.1" cuda
+    $ conda install -y -c conda-forge gxx_linux-64=11.4.0
+    $ conda install -y pip
+    $ pip install --upgrade pip
+    $ pip install torch --index-url https://download.pytorch.org/whl/cu121
+    $ TORCH_CUDA_ARCH_LIST="Pascal;Volta;Turing;Ampere" pip install --no-cache-dir torchsort
+"""
 
 __all__ = [
     'DCPNRELoss',
