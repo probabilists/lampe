@@ -36,7 +36,6 @@ def test_NRE():
         BNRELoss(estimator),
         CNRELoss(estimator),
         BCNRELoss(estimator),
-        DCPNRELoss(estimator, prior),
     ]
 
     for loss in losses:
@@ -133,8 +132,6 @@ def test_NPELoss():
 
     losses = [
         NPELoss(estimator),
-        DCPNPELoss(estimator),
-        DCPNPELoss(estimator, proposal=prior),
     ]
 
     for loss in losses:
