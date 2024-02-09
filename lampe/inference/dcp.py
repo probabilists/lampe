@@ -1,4 +1,26 @@
-r"""Differentiable Coverage Probability components.
+r"""Differentiable Coverage Probability (DCP) components.
+
+This module implements Differentiable Coverage Probability (DCP) regularizer for
+training Neural Ratio Estimator (NRE) and Neural Posterior Estimator (NPE), please refer to
+the documentation of the respective modules to learn about the methods.
+
+DCP regularizer relies on the Expected Coverage Probability (ECP) of Highest Posterior Density Region (HPDR)
+
+.. math:: \text{ECP}(1 - \alpha) = \mathbb{E}_{p(\theta, x)} \left[ \mathbb{I}[\theta \in \Theta_{\hat{p}(\theta|x)}(1-\alpha)] \right]
+
+where :math:`\Theta_{\hat{p}(\theta|x)}(1-\alpha)` is the HPDR of the approximate posterior model :math:`\hat{p}(\theta|x)`
+at level :math:`1-\alpha`, and :math:`\mathbb{I}[\cdot]` is an indicator function.
+
+It can be shown that
+
+.. math:: \text{ECP}(1 - \alpha) = \mathbb{E}_{p(\theta, x)} \left[\mathbb{I}[\alpha(\hat{p},\theta,x) \geqslant \alpha]\right]
+
+where :math:`\alpha(\hat{p},\theta_j,x_j) := \int \hat{p}(\theta|x_j) \mathbb{I}[\hat{p}(\theta|x_j) < \hat{p}(\theta_j|x_j)]\textrm{d}\theta`.
+
+A conservative (calibrated) posterior model is one that has :math:`\text{ECP}(1 - \alpha)`
+above (at) level :math:`1-\alpha` for all :math:`\alpha \in (0,1)`.
+DCP regularizer turns this condition into a differentiable optimization objective minimized in
+parallel to the main optimization objective of NRE or NPE.
 
 References:
     | Calibrating Neural Simulation-Based Inference with Differentiable Coverage Probability (Falkiewicz et al., 2023)
@@ -8,20 +30,20 @@ Installation
 ------------
 
 This module relies on differentiable sorting package
-[`torchsort`](https://github.com/teddykoker/torchsort) which is not q default
+`torchsort <https://github.com/teddykoker/torchsort>`_ which is not a default
 dependency of `lampe`. `torchsort` supports both CPU and GPU (CUDA) computation.
 In order to install the package with CUDA support, you need to have C++ and CUDA
-compiler installed. For more information please refer to the [installation section](https://github.com/teddykoker/torchsort?tab=readme-ov-file#install)
+compiler installed. For more information please refer to the `installation section <https://github.com/teddykoker/torchsort?tab=readme-ov-file#install>`_
 in the official repository.
 
 Please keep in mind, that compiler's CUDA version has to match that of pytorch!
 
 For certain Python + CUDA + pytorch versions combinations there are
-[pre-build wheels](https://github.com/teddykoker/torchsort?tab=readme-ov-file#pre-built-wheels)
+`pre-build wheels <https://github.com/teddykoker/torchsort?tab=readme-ov-file#pre-built-wheels>`_
 available.
 
 
-Below is an example of how to install `torchsort` in a [conda environment](https://conda.io/projects/conda/en/latest/user-guide/getting-started.html)
+Below is an example of how to install `torchsort` in a `conda environment <https://conda.io/projects/conda/en/latest/user-guide/getting-started.html>`_
 with Python 3.11 + CUDA 12.1.1 + pytorch 2.0.0:
 
 .. code-block:: bash
@@ -33,7 +55,7 @@ with Python 3.11 + CUDA 12.1.1 + pytorch 2.0.0:
     $ conda install -y -c conda-forge gxx_linux-64=11.4.0
     $ conda install -y pip
     $ pip install --upgrade pip
-    $ pip install torch --index-url https://download.pytorch.org/whl/cu121
+    $ pip install torch==2.0.0 --index-url https://download.pytorch.org/whl/cu121
     $ TORCH_CUDA_ARCH_LIST="Pascal;Volta;Turing;Ampere" pip install --no-cache-dir torchsort
 """
 
@@ -64,7 +86,7 @@ class STEhardtanh(torch.autograd.Function):
 
 class DCPNRELoss(nn.Module):
     r"""Creates a module that calculates cross-entropy loss and the
-    calibration/conservativeness loss for an NRE network.
+    regularization loss for an NRE network.
 
     Given a batch of :math:`N \geq 2` pairs :math:`(\theta_i, x_i)`, the module returns
 
@@ -88,7 +110,7 @@ class DCPNRELoss(nn.Module):
         lmbda: The weight :math:`\lambda` controlling the strength of the regularizer.
         n_samples: Number of samples in MC estimate of rank statistic
         calibration: Boolean flag of calibration objective (default: False)
-        sort_kwargs: Arguments of differentiable sorting algorithm, see [doc](https://github.com/teddykoker/torchsort#usage) (default: None)
+        sort_kwargs: Arguments of differentiable sorting algorithm, see `doc <https://github.com/teddykoker/torchsort#usage>`_ (default: None)
     """
 
     def __init__(
@@ -175,7 +197,7 @@ class DCPNRELoss(nn.Module):
 
 class DCPNPELoss(nn.Module):
     r"""Creates a module that calculates the negative log-likelihood loss and
-    the calibration/conservativeness loss for a NPE normalizing flow.
+    the regularization loss for a NPE normalizing flow.
 
     Given a batch of :math:`N \geq 2` pairs :math:`(\theta_i, x_i)`, the module returns
 
@@ -197,7 +219,7 @@ class DCPNPELoss(nn.Module):
         lmbda: The weight :math:`\lambda` controlling the strength of the regularizer.
         n_samples: Number of samples in MC estimate of rank statistic
         calibration: Boolean flag of calibration objective (default: False)
-        sort_kwargs: Arguments of differentiable sorting algorithm, see [doc](https://github.com/teddykoker/torchsort#usage) (default: None)
+        sort_kwargs: Arguments of differentiable sorting algorithm, see `doc <https://github.com/teddykoker/torchsort#usage>`_ (default: None)
     """
 
     def __init__(
