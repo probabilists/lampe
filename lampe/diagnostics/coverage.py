@@ -1,4 +1,4 @@
-r"""Diagnostics and reliability assessment."""
+r"""Coverage diagnostics."""
 
 import torch
 
@@ -8,7 +8,7 @@ from tqdm import tqdm
 from typing import Callable, Iterable, Tuple
 
 # isort: local
-from .utils import gridapply
+from ..utils import gridapply
 
 
 def expected_coverage_mc(
