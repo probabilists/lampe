@@ -9,6 +9,7 @@ from torch import randn
 
 def test_NRE():
     estimator = NRE(3, 5)
+    prior = torch.distributions.MultivariateNormal(torch.zeros(3), torch.eye(3))
 
     # Non-batched
     theta, x = randn(3), randn(5)
@@ -62,7 +63,9 @@ def test_AMNRE():
 
     assert log_r.shape == (256,)
 
-    grad = torch.autograd.functional.jacobian(lambda theta: estimator(theta, x, b).sum(), theta)
+    grad = torch.autograd.functional.jacobian(
+        lambda theta: estimator(theta, x, b).sum(), theta
+    )
 
     assert (grad[~b] == 0).all()
 
@@ -125,14 +128,19 @@ def test_NPE():
 
 def test_NPELoss():
     estimator = NPE(3, 5)
-    loss = NPELoss(estimator)
+    prior = torch.distributions.MultivariateNormal(torch.zeros(3), torch.eye(3))
 
-    theta, x = randn(256, 3), randn(256, 5)
+    losses = [
+        NPELoss(estimator),
+    ]
 
-    l = loss(theta, x)
+    for loss in losses:
+        theta, x = randn(256, 3), randn(256, 5)
 
-    assert l.shape == ()
-    assert l.requires_grad
+        l = loss(theta, x)
+
+        assert l.shape == ()
+        assert l.requires_grad
 
 
 def test_FMPE():
