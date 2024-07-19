@@ -62,9 +62,7 @@ def test_AMNRE():
 
     assert log_r.shape == (256,)
 
-    grad = torch.autograd.functional.jacobian(
-        lambda theta: estimator(theta, x, b).sum(), theta
-    )
+    grad = torch.autograd.functional.jacobian(lambda theta: estimator(theta, x, b).sum(), theta)
 
     assert (grad[~b] == 0).all()
 

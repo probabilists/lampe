@@ -156,12 +156,10 @@ class DCPNRELoss(nn.Module):
             The scalar loss :math:`l`.
         """
         theta_prime = torch.roll(theta, 1, dims=0)
-        theta_is = self.proposal.sample(
-            (
-                self.n_samples,
-                theta.shape[0],
-            )
-        )
+        theta_is = self.proposal.sample((
+            self.n_samples,
+            theta.shape[0],
+        ))
 
         log_r_all = self.estimator(
             theta_all := torch.cat((torch.stack((theta_prime, theta)), theta_is)),
@@ -256,9 +254,7 @@ class DCPNPELoss(nn.Module):
             self.forward = self._forward_is
             self.get_rank_statistics = self._get_rank_statistics_is
 
-    def rsample_and_log_prob(
-        self, x: Tensor, shape: Size = ()
-    ) -> Tuple[Tensor, Tensor]:
+    def rsample_and_log_prob(self, x: Tensor, shape: Size = ()) -> Tuple[Tensor, Tensor]:
         r"""
         Arguments:
             x: The observation :math:`x`, with shape :math:`(*, L)`.
@@ -300,12 +296,10 @@ class DCPNPELoss(nn.Module):
         Returns:
             The scalar loss :math:`l`.
         """
-        theta_is = self.proposal.sample(
-            (
-                self.n_samples,
-                theta.shape[0],
-            )
-        )
+        theta_is = self.proposal.sample((
+            self.n_samples,
+            theta.shape[0],
+        ))
         log_p = self.estimator(torch.cat((theta.unsqueeze(0), theta_is)), x)
         lr = self.regularizer(x, log_p, theta_is)
 
