@@ -4,6 +4,7 @@ import glob
 import importlib
 import inspect
 import lampe
+import pathlib
 import re
 import subprocess
 
@@ -12,9 +13,10 @@ import subprocess
 package = 'lampe'
 project = 'LAMPE'
 version = lampe.__version__
-copyright = '2021-2023'
+copyright = '2021-2024'
 repository = 'https://github.com/probabilists/lampe'
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True).strip()
 
 ## Extensions
 
@@ -44,7 +46,7 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable', None),
     'python': ('https://docs.python.org/3', None),
     'torch': ('https://pytorch.org/docs/stable', None),
-    'zuko': ('https://zuko.readthedocs.io/en/stable', None),
+    'zuko': ('https://zuko.readthedocs.io/stable', None),
 }
 
 
@@ -59,12 +61,12 @@ def linkcode_resolve(domain: str, info: dict) -> str:
     for name in fullname.split('.'):
         objct = getattr(objct, name)
 
-    if hasattr(objct, '__wrapped__'):
+    while hasattr(objct, '__wrapped__'):
         objct = objct.__wrapped__
 
     try:
         file = inspect.getsourcefile(objct)
-        file = file[file.rindex(package) :]
+        file = pathlib.Path(file).relative_to(root)
 
         lines, start = inspect.getsourcelines(objct)
         end = start + len(lines) - 1
@@ -116,6 +118,7 @@ html_theme_options = {
     },
     'dark_logo': 'logo_dark.svg',
     'sidebar_hide_name': True,
+    'top_of_page_buttons': ['view'],
 }
 html_title = f'{project} {version}'
 pygments_style = 'sphinx'
