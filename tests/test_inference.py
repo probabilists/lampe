@@ -9,7 +9,6 @@ from torch import randn
 
 def test_NRE():
     estimator = NRE(3, 5)
-    prior = torch.distributions.MultivariateNormal(torch.zeros(3), torch.eye(3))
 
     # Non-batched
     theta, x = randn(3), randn(5)
@@ -128,7 +127,6 @@ def test_NPE():
 
 def test_NPELoss():
     estimator = NPE(3, 5)
-    prior = torch.distributions.MultivariateNormal(torch.zeros(3), torch.eye(3))
 
     losses = [
         NPELoss(estimator),
