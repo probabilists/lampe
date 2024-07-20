@@ -47,7 +47,7 @@ from torch import Tensor
 from typing import Callable
 from zuko.utils import broadcast
 
-# isort: local
+# isort: split
 from ..nn import MLP
 
 

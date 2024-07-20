@@ -33,7 +33,7 @@ from zuko.distributions import DiagNormal, NormalizingFlow
 from zuko.transforms import FreeFormJacobianTransform
 from zuko.utils import broadcast
 
-# isort: local
+# isort: split
 from ..nn import MLP
 
 
