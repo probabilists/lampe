@@ -7,7 +7,7 @@ from torch.distributions import Distribution
 from tqdm import tqdm
 from typing import Callable, Iterable, Tuple
 
-# isort: local
+# isort: split
 from ..utils import gridapply
 
 

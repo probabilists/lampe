@@ -39,7 +39,7 @@ from torch import BoolTensor, Tensor
 from torch.distributions import Distribution
 from zuko.utils import broadcast
 
-# isort: local
+# isort: split
 from .nre import NRE
 
 
