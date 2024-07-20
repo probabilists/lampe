@@ -125,14 +125,18 @@ def test_NPE():
 
 def test_NPELoss():
     estimator = NPE(3, 5)
-    loss = NPELoss(estimator)
 
-    theta, x = randn(256, 3), randn(256, 5)
+    losses = [
+        NPELoss(estimator),
+    ]
 
-    l = loss(theta, x)
+    for loss in losses:
+        theta, x = randn(256, 3), randn(256, 5)
 
-    assert l.shape == ()
-    assert l.requires_grad
+        l = loss(theta, x)
+
+        assert l.shape == ()
+        assert l.requires_grad
 
 
 def test_FMPE():
