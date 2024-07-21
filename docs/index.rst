@@ -11,6 +11,10 @@ LAMPE is a simulation-based inference (SBI) package that focuses on amortized es
 
 As part of the inference pipeline, :mod:`lampe` provides components to efficiently `store and load data <api/data.html>`_ from disk, `diagnose predictions <api/diagnostics.html>`_ and `display results <api/plots.html>`_ graphically.
 
+.. important::
+
+    In an effort to unite communities, the development of LAMPE has stopped in favor of the `sbi <https://github.com/sbi-dev/sbi>`_ project. The :mod:`sbi` package already supports many of :mod:`lampe`'s features, and you are welcome to `submit issues <https://github.com/sbi-dev/sbi/issues>`_ and PRs for the features you would like to be ported to :mod:`sbi`.
+
 Installation
 ------------
 
