@@ -8,8 +8,8 @@ from lampe.masks import *
 def test_mask2str():
     b = torch.tensor([True, True, False, True, False])
 
-    assert mask2str(b) == '11010'
-    assert (str2mask('11010') == b).all()
+    assert mask2str(b) == "11010"
+    assert (str2mask("11010") == b).all()
 
 
 def test_BernouilliMask():

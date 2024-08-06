@@ -1,6 +1,6 @@
 r"""Plotting helpers."""
 
-__all__ = ['nice_rc', 'corner', 'mark_point', 'coverage_plot']
+__all__ = ["nice_rc", "corner", "mark_point", "coverage_plot"]
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -23,28 +23,28 @@ def nice_rc(latex: bool = False) -> Dict[str, Any]:
     """
 
     rc = {
-        'axes.axisbelow': True,
-        'axes.linewidth': 0.8,
-        'figure.dpi': 150,
-        'figure.figsize': (6.4, 4.8),
-        'font.size': 12.0,
-        'legend.fontsize': 'x-small',
-        'lines.linewidth': 1.0,
-        'lines.markersize': 3.0,
-        'savefig.bbox': 'tight',
-        'savefig.pad_inches': 0.05,
-        'savefig.transparent': True,
-        'xtick.labelsize': 'x-small',
-        'xtick.major.width': 0.8,
-        'ytick.labelsize': 'x-small',
-        'ytick.major.width': 0.8,
+        "axes.axisbelow": True,
+        "axes.linewidth": 0.8,
+        "figure.dpi": 150,
+        "figure.figsize": (6.4, 4.8),
+        "font.size": 12.0,
+        "legend.fontsize": "x-small",
+        "lines.linewidth": 1.0,
+        "lines.markersize": 3.0,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.05,
+        "savefig.transparent": True,
+        "xtick.labelsize": "x-small",
+        "xtick.major.width": 0.8,
+        "ytick.labelsize": "x-small",
+        "ytick.major.width": 0.8,
     }
 
     if latex:
         rc.update({
-            'font.family': ['serif'],
-            'font.serif': ['Computer Modern'],
-            'text.usetex': True,
+            "font.family": ["serif"],
+            "font.serif": ["Computer Modern"],
+            "text.usetex": True,
         })
 
     return rc
@@ -69,9 +69,9 @@ class LinearAlphaColormap(mpl.colors.LinearSegmentedColormap):
     ):
         if name is None:
             if isinstance(color, str):
-                name = f'alpha_{color}'
+                name = f"alpha_{color}"
             else:
-                name = f'alpha_{hash(color)}'
+                name = f"alpha_{hash(color)}"
 
         if levels is None:
             levels = [0.0, 1.0]
@@ -111,7 +111,7 @@ def gaussian_blur(img: Array, sigma: float = 1.0) -> Array:
     k = np.exp(-(k**2) / (2 * sigma**2))
     k = k / np.sum(k)
 
-    smooth = lambda x: np.convolve(x, k, mode='same')
+    smooth = lambda x: np.convolve(x, k, mode="same")
 
     for i in range(len(img.shape)):
         img = np.apply_along_axis(smooth, i, img)
@@ -235,14 +235,14 @@ def corner(
 
     # Figure
     if figure is None:
-        kwargs.setdefault('figsize', (6.4, 6.4))
+        kwargs.setdefault("figsize", (6.4, 6.4))
 
         figure, axes = plt.subplots(
             D,
             D,
             squeeze=False,
-            sharex='col',
-            gridspec_kw={'wspace': 0.0, 'hspace': 0.0},
+            sharex="col",
+            gridspec_kw={"wspace": 0.0, "hspace": 0.0},
             **kwargs,
         )
         new = True
@@ -257,7 +257,7 @@ def corner(
     creds = np.append(creds, 0)
 
     if new:
-        cmap = LinearAlphaColormap('black', levels=creds, alpha=alpha)
+        cmap = LinearAlphaColormap("black", levels=creds, alpha=alpha)
 
         levels = (creds - creds.min()) / (creds.max() - creds.min())
         levels = (levels[:-1] + levels[1:]) / 2
@@ -268,15 +268,15 @@ def corner(
                 [],
                 color=cmap(l),
                 linewidth=6,
-                solid_capstyle='butt',
-                label=r'${:.1f}\,\%$'.format(c * 100),
+                solid_capstyle="butt",
+                label=r"${:.1f}\,\%$".format(c * 100),
             )
 
     ## Color
-    lines = axes[0, -1].plot([], [], color=color, solid_capstyle='butt', label=legend)
+    lines = axes[0, -1].plot([], [], color=color, solid_capstyle="butt", label=legend)
     color = lines[-1].get_color()
 
-    axes[0, -1].legend(loc='upper right', frameon=False)
+    axes[0, -1].legend(loc="upper right", frameon=False)
 
     # Plot
     for i in range(D):
@@ -285,7 +285,7 @@ def corner(
             hist = hists[i, j]
 
             if j > i:
-                ax.axis('off')
+                ax.axis("off")
                 continue
 
             if hist is None:
@@ -326,22 +326,22 @@ def corner(
 
             ## Ticks
             if i == D - 1:
-                ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(3, prune='both'))
+                ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(3, prune="both"))
                 plt.setp(
                     ax.get_xticklabels(),
                     rotation=45.0,
-                    horizontalalignment='right',
-                    rotation_mode='anchor',
+                    horizontalalignment="right",
+                    rotation_mode="anchor",
                 )
             else:
-                ax.xaxis.set_ticks_position('none')
+                ax.xaxis.set_ticks_position("none")
 
             if i == j:
                 ax.set_yticks([])
             elif j == 0:
-                ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(3, prune='both'))
+                ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(3, prune="both"))
             else:
-                ax.yaxis.set_ticks_position('none')
+                ax.yaxis.set_ticks_position("none")
 
             ## Labels
             if labels is not None:
@@ -354,7 +354,7 @@ def corner(
             ax.label_outer()
 
     figure.align_labels()
-    figure.set_layout_engine(layout='tight')
+    figure.set_layout_engine(layout="tight")
 
     return figure
 
@@ -362,9 +362,9 @@ def corner(
 def mark_point(
     figure: plt.Figure,
     point: Array,
-    color: Union[str, tuple] = 'black',
-    linestyle: str = 'dashed',
-    marker: str = 's',  # square
+    color: Union[str, tuple] = "black",
+    linestyle: str = "dashed",
+    marker: str = "s",  # square
     legend: str = None,
 ) -> None:
     r"""Marks a point on the histograms of a corner plot.
@@ -396,11 +396,11 @@ def mark_point(
             color=color,
             linestyle=linestyle,
             marker=marker,
-            solid_capstyle='butt',
+            solid_capstyle="butt",
             label=legend,
         )
 
-        axes[0, -1].legend(loc='upper right', frameon=False)
+        axes[0, -1].legend(loc="upper right", frameon=False)
 
     # Plot
     for i in range(D):
@@ -447,7 +447,7 @@ def coverage_plot(
 
     # Figure
     if figure is None:
-        kwargs.setdefault('figsize', (3.2, 3.2))
+        kwargs.setdefault("figsize", (3.2, 3.2))
 
         figure, ax = plt.subplots(**kwargs)
         new = True
@@ -457,17 +457,17 @@ def coverage_plot(
 
     # Plot
     if new:
-        ax.plot([0, 1], [0, 1], color='k', linestyle='--')
+        ax.plot([0, 1], [0, 1], color="k", linestyle="--")
 
     ax.plot(levels, coverages, color=color, label=legend)
 
     ax.grid(visible=True)
-    ax.set_xlabel(r'Credible level')
-    ax.set_ylabel(r'Expected coverage')
+    ax.set_xlabel(r"Credible level")
+    ax.set_ylabel(r"Expected coverage")
 
     if legend is not None:
-        ax.legend(loc='upper left')
+        ax.legend(loc="upper left")
 
-    figure.set_layout_engine(layout='tight')
+    figure.set_layout_engine(layout="tight")
 
     return figure

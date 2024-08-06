@@ -1,7 +1,7 @@
 r"""Monte Carlo Markov chain (MCMC) components."""
 
 __all__ = [
-    'MetropolisHastings',
+    "MetropolisHastings",
 ]
 
 import torch

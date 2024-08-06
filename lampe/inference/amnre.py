@@ -27,8 +27,8 @@ References:
 """
 
 __all__ = [
-    'AMNRE',
-    'AMNRELoss',
+    "AMNRE",
+    "AMNRELoss",
 ]
 
 import torch

@@ -37,7 +37,7 @@ def test_GDStep():
     # Non-finite loss
     before = layer.weight.detach().clone()
 
-    x = rand(3) * float('inf')
+    x = rand(3) * float("inf")
     y = layer(x)
 
     loss = (y - x).square().sum()

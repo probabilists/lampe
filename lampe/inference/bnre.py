@@ -6,7 +6,7 @@ References:
 """
 
 __all__ = [
-    'BNRELoss',
+    "BNRELoss",
 ]
 
 import torch

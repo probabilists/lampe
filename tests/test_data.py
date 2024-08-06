@@ -120,17 +120,17 @@ def test_H5Dataset(tmp_path):
     # Store
     pairs = list(zip(theta.split(256), x.split(256)))
 
-    H5Dataset.store(pairs, tmp_path / 'data_1.h5', size=4096)
-    H5Dataset.store(iter(pairs), tmp_path / 'data_2.h5', size=4096)
-    H5Dataset.store([(theta, x)], tmp_path / 'data_3.h5', size=256)
+    H5Dataset.store(pairs, tmp_path / "data_1.h5", size=4096)
+    H5Dataset.store(iter(pairs), tmp_path / "data_2.h5", size=4096)
+    H5Dataset.store([(theta, x)], tmp_path / "data_3.h5", size=256)
 
     with pytest.raises(FileExistsError):
-        H5Dataset.store(pairs, tmp_path / 'data_1.h5', size=4096)
+        H5Dataset.store(pairs, tmp_path / "data_1.h5", size=4096)
 
-    H5Dataset.store(pairs, tmp_path / 'data_1.h5', overwrite=True, size=4096)
+    H5Dataset.store(pairs, tmp_path / "data_1.h5", overwrite=True, size=4096)
 
     # Load
-    for file in tmp_path.glob('data_*.h5'):
+    for file in tmp_path.glob("data_*.h5"):
         dataset = H5Dataset(file)
 
         assert len(dataset) in {256, 4096}
@@ -150,7 +150,7 @@ def test_H5Dataset(tmp_path):
         assert i == len(dataset) - 1
 
     # Shuffle
-    dataset = H5Dataset(tmp_path / 'data_1.h5', batch_size=256, shuffle=True)
+    dataset = H5Dataset(tmp_path / "data_1.h5", batch_size=256, shuffle=True)
 
     it = iter(dataset)
     theta1, x1 = next(it)

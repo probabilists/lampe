@@ -35,8 +35,8 @@ References:
 """
 
 __all__ = [
-    'NRE',
-    'NRELoss',
+    "NRE",
+    "NRELoss",
 ]
 
 import torch

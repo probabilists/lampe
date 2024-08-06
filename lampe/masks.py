@@ -18,7 +18,7 @@ def mask2str(b: BoolTensor) -> str:
         '11010'
     """
 
-    return ''.join('1' if bit else '0' for bit in b)
+    return "".join("1" if bit else "0" for bit in b)
 
 
 def str2mask(string: str) -> BoolTensor:
@@ -32,7 +32,7 @@ def str2mask(string: str) -> BoolTensor:
         tensor([True, True, False, True, False])
     """
 
-    return torch.tensor([char == '1' for char in string])
+    return torch.tensor([char == "1" for char in string])
 
 
 class BernoulliMask(Independent):
@@ -57,7 +57,7 @@ class BernoulliMask(Independent):
         super().__init__(Bernoulli(p), 1)
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}(D={self.event_shape.numel()})'
+        return f"{self.__class__.__name__}(D={self.event_shape.numel()})"
 
     def log_prob(self, b: BoolTensor) -> Tensor:
         return super().log_prob(b.float())
@@ -95,7 +95,7 @@ class SelectionMask(Distribution):
         self.selection = selection
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}(D={self.event_shape.numel()})'
+        return f"{self.__class__.__name__}(D={self.event_shape.numel()})"
 
     def log_prob(self, b: BoolTensor) -> Tensor:
         match = torch.all(b[..., None, :] == self.selection, dim=-1)

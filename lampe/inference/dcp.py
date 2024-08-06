@@ -60,8 +60,8 @@ Python 3.11 + CUDA 12.1.1 + PyTorch 2.0.0:
 """
 
 __all__ = [
-    'DCPNRELoss',
-    'DCPNPELoss',
+    "DCPNRELoss",
+    "DCPNPELoss",
 ]
 
 import torch

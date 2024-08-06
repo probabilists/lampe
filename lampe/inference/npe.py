@@ -22,8 +22,8 @@ Wikipedia:
 """
 
 __all__ = [
-    'NPE',
-    'NPELoss',
+    "NPE",
+    "NPELoss",
 ]
 
 import torch.nn as nn

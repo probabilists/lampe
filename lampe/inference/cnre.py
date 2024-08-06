@@ -38,8 +38,8 @@ References:
 """
 
 __all__ = [
-    'CNRELoss',
-    'BCNRELoss',
+    "CNRELoss",
+    "BCNRELoss",
 ]
 
 import math

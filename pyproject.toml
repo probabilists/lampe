@@ -59,9 +59,7 @@ no-sections = true
 relative-imports-order = "closest-to-furthest"
 
 [tool.ruff.format]
-exclude = ["*.ipynb"]
 preview = true
-quote-style = "preserve"
 
 [tool.setuptools.dynamic]
 dependencies = {file = "requirements.txt"}

@@ -29,7 +29,7 @@ class GDStep(object):
 
     def __init__(self, optimizer: Optimizer, clip: float = None):
         self.optimizer = optimizer
-        self.parameters = [p for group in optimizer.param_groups for p in group['params']]
+        self.parameters = [p for group in optimizer.param_groups for p in group["params"]]
         self.clip = clip
 
     def __call__(self, loss: Tensor) -> Tensor:

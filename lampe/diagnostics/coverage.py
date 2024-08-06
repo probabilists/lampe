@@ -61,7 +61,7 @@ def expected_coverage_mc(
     ranks = []
 
     with torch.no_grad():
-        for theta, x in tqdm(pairs, unit='pair'):
+        for theta, x in tqdm(pairs, unit="pair"):
             if device is not None:
                 theta, x = theta.to(device), x.to(device)
 
@@ -120,7 +120,7 @@ def expected_coverage_ni(
     ranks = []
 
     with torch.no_grad():
-        for theta, x in tqdm(pairs, unit='pair'):
+        for theta, x in tqdm(pairs, unit="pair"):
             if device is not None:
                 theta, x = theta.to(device), x.to(device)
 

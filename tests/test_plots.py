@@ -12,7 +12,7 @@ def test_nice_rc():
 def test_corner():
     # Samples
     samples = np.random.randn(2**16, 3)
-    labels = ['a', 'b', 'c']
+    labels = ["a", "b", "c"]
     figure = corner(samples, bins=32, labels=labels, figsize=(4.8, 4.8))
 
     assert np.asarray(figure.axes).size == 3**2
@@ -31,7 +31,7 @@ def test_corner():
     assert figure is new
 
     # Mark points
-    mark_point(figure, [0.5, 0.3, -0.7], color='black')
+    mark_point(figure, [0.5, 0.3, -0.7], color="black")
 
 
 def test_coverage_plot():

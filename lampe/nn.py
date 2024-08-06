@@ -1,6 +1,6 @@
 r"""Neural networks, layers and modules."""
 
-__all__ = ['MLP', 'ResMLP']
+__all__ = ["MLP", "ResMLP"]
 
 import torch.nn as nn
 
@@ -24,7 +24,7 @@ class Residual(nn.Module):
         self.f = f
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({self.f})'
+        return f"{self.__class__.__name__}({self.f})"
 
     def forward(self, x: Tensor) -> Tensor:
         return x + self.f(x)

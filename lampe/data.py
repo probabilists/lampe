@@ -1,6 +1,6 @@
 r"""Datasets and data loaders."""
 
-__all__ = ['JointLoader', 'JointDataset', 'H5Dataset']
+__all__ = ["JointLoader", "JointDataset", "H5Dataset"]
 
 import h5py
 import numpy as np
@@ -199,7 +199,7 @@ class H5Dataset(IterableDataset):
     ):
         super().__init__()
 
-        self.file = h5py.File(file, mode='r')
+        self.file = h5py.File(file, mode="r")
 
         self.batch_size = batch_size
         self.chunk_size = chunk_size
@@ -207,10 +207,10 @@ class H5Dataset(IterableDataset):
         self.shuffle = shuffle
 
     def __len__(self) -> int:
-        return len(self.file['theta'])
+        return len(self.file["theta"])
 
     def __getitem__(self, i: Union[int, slice]) -> Tuple[Tensor, Tensor]:
-        theta, x = self.file['theta'][i], self.file['x'][i]
+        theta, x = self.file["theta"][i], self.file["x"][i]
 
         return torch.from_numpy(theta), torch.from_numpy(x)
 
@@ -235,8 +235,8 @@ class H5Dataset(IterableDataset):
                     stack.append(s)
 
             # Load
-            theta = np.concatenate([self.file['theta'][i:j] for i, j in stack])
-            x = np.concatenate([self.file['x'][i:j] for i, j in stack])
+            theta = np.concatenate([self.file["theta"][i:j] for i, j in stack])
+            x = np.concatenate([self.file["x"][i:j] for i, j in stack])
 
             theta, x = torch.from_numpy(theta), torch.from_numpy(x)
 
@@ -262,8 +262,8 @@ class H5Dataset(IterableDataset):
         """
 
         return JointDataset(
-            self.file['theta'][:],
-            self.file['x'][:],
+            self.file["theta"][:],
+            self.file["x"][:],
             batch_size=self.batch_size,
             shuffle=self.shuffle,
         )
@@ -304,25 +304,25 @@ class H5Dataset(IterableDataset):
         file = Path(file)
         file.parent.mkdir(parents=True, exist_ok=True)
 
-        with h5py.File(file, 'w' if overwrite else 'w-') as f:
+        with h5py.File(file, "w" if overwrite else "w-") as f:
             ## Attributes
             f.attrs.update(meta)
 
             ## Datasets
             theta, x = map(np.asarray, next(pairs))
 
-            f.create_dataset('theta', (size,) + theta.shape[1:], dtype=dtype)
-            f.create_dataset('x', (size,) + x.shape[1:], dtype=dtype)
+            f.create_dataset("theta", (size,) + theta.shape[1:], dtype=dtype)
+            f.create_dataset("x", (size,) + x.shape[1:], dtype=dtype)
 
             ## Store
-            with tqdm(total=size, unit='pair') as tq:
+            with tqdm(total=size, unit="pair") as tq:
                 i = 0
 
                 while True:
                     j = min(i + theta.shape[0], size)
 
-                    f['theta'][i:j] = theta[: j - i]
-                    f['x'][i:j] = x[: j - i]
+                    f["theta"][i:j] = theta[: j - i]
+                    f["x"][i:j] = x[: j - i]
 
                     tq.update(j - i)
 

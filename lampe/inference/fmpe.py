@@ -18,8 +18,8 @@ References:
 """
 
 __all__ = [
-    'FMPE',
-    'FMPELoss',
+    "FMPE",
+    "FMPELoss",
 ]
 
 import math
@@ -61,9 +61,9 @@ class FMPE(nn.Module):
 
         self.net = build(theta_dim + x_dim + 2 * freqs, theta_dim, **kwargs)
 
-        self.register_buffer('freqs', torch.arange(1, freqs + 1) * math.pi)
-        self.register_buffer('zeros', torch.zeros(theta_dim))
-        self.register_buffer('ones', torch.ones(theta_dim))
+        self.register_buffer("freqs", torch.arange(1, freqs + 1) * math.pi)
+        self.register_buffer("zeros", torch.zeros(theta_dim))
+        self.register_buffer("ones", torch.ones(theta_dim))
 
     def forward(self, theta: Tensor, x: Tensor, t: Tensor) -> Tensor:
         r"""
